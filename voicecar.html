@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Car Voice Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #1a1a2e;
+      color: white;
+      padding: 20px;
+    }
+    h1 { font-size: 22px; color: #00d4ff; }
+    .status {
+      background: #16213e;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+      font-size: 16px;
+    }
+    .btn {
+      width: 100%;
+      padding: 15px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #btBtn { background: #0066ff; color: white; }
+    #listenBtn { background: #00aa44; color: white; }
+    #stopBtn { background: #cc0000; color: white; }
+    .confidence {
+      background: #16213e;
+      padding: 10px;
+      border-radius: 8px;
+      margin: 5px 0;
+      text-align: left;
+      font-size: 14px;
+    }
+    .bar {
+      height: 20px;
+      background: #00d4ff;
+      border-radius: 5px;
+      margin-top: 5px;
+      transition: width 0.2s;
+    }
+    #commandDisplay {
+      font-size: 28px;
+      font-weight: bold;
+      color: #00ff88;
+      padding: 15px;
+      background: #16213e;
+      border-radius: 10px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🚗 Smart Car Voice Control</h1>
+<div class="status" id="statusDiv">Loading model...</div>
+<div id="commandDisplay">---</div>
+
+<button class="btn" id="btBtn" onclick="connectBluetooth()">
+  🔵 Connect Bluetooth
+</button>
+
+<button class="btn" id="listenBtn" 
+        onclick="startListening()" disabled>
+  🎤 Start Voice Control
+</button>
+
+<button class="btn" id="stopBtn" 
+        onclick="stopListening()" disabled>
+  ⏹ Stop Listening
+</button>
+
+<div id="predictions"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
+
+<script>
+const MODEL_URL = 
+  "https://teachablemachine.withgoogle.com/models/vWCoKIgKY/";
+
+let recognizer;
+let btCharacteristic;
+let lastCommand = "";
+let lastCommandTime = 0;
+
+async function loadModel() {
+  try {
+    document.getElementById("statusDiv").innerText = 
+      "Loading voice model...";
+
+    recognizer = speechCommands.create(
+      "BROWSER_FFT",
+      undefined,
+      MODEL_URL + "model.json",
+      MODEL_URL + "metadata.json"
+    );
+
+    await recognizer.ensureModelLoaded();
+
+    document.getElementById("statusDiv").innerText =
+      "✅ Model loaded! Connect Bluetooth now.";
+
+    setupBars();
+
+  } catch(e) {
+    document.getElementById("statusDiv").innerText =
+      "❌ Error: " + e.message;
+    console.log(e);
+  }
+}
+
+function setupBars() {
+  const labels = recognizer.wordLabels();
+  let html = "<h3>Voice Detection:</h3>";
+  labels.forEach(label => {
+    html += `
+      <div class="confidence">
+        ${label}
+        <div class="bar" id="bar_${label}" 
+             style="width:0%"></div>
+        <span id="pct_${label}">0%</span>
+      </div>`;
+  });
+  document.getElementById("predictions").innerHTML = html;
+}
+
+async function connectBluetooth() {
+  try {
+    document.getElementById("statusDiv").innerText =
+      "Connecting Bluetooth...";
+
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "SmartCar_Voice" }],
+      optionalServices: [
+        "0000ffe0-0000-1000-8000-00805f9b34fb"
+      ]
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(
+      "0000ffe0-0000-1000-8000-00805f9b34fb"
+    );
+    btCharacteristic = await service.getCharacteristic(
+      "0000ffe1-0000-1000-8000-00805f9b34fb"
+    );
+
+    document.getElementById("statusDiv").innerText =
+      "✅ Bluetooth Connected!";
+    document.getElementById("btBtn").innerText =
+      "✅ Connected";
+    document.getElementById("listenBtn").disabled = false;
+
+  } catch(e) {
+    document.getElementById("statusDiv").innerText =
+      "❌ BT Error: " + e.message;
+  }
+}
+
+async function sendCommand(cmd) {
+  const now = Date.now();
+  if (cmd === lastCommand && 
+      now - lastCommandTime < 1500) return;
+  lastCommand = cmd;
+  lastCommandTime = now;
+
+  try {
+    if (btCharacteristic) {
+      const encoder = new TextEncoder();
+      await btCharacteristic.writeValue(
+        encoder.encode(cmd)
+      );
+      document.getElementById("commandDisplay").innerText =
+        "▶ " + cmd.toUpperCase();
+    }
+  } catch(e) {
+    console.log("Send error: " + e.message);
+  }
+}
+
+async function startListening() {
+  if (!recognizer) {
+    document.getElementById("statusDiv").innerText =
+      "Model not loaded!";
+    return;
+  }
+
+  document.getElementById("listenBtn").disabled = true;
+  document.getElementById("stopBtn").disabled = false;
+  document.getElementById("statusDiv").innerText =
+    "🎤 Listening...";
+
+  recognizer.listen(result => {
+    const labels = recognizer.wordLabels();
+    const scores = result.scores;
+
+    let maxScore = 0;
+    let maxLabel = "";
+
+    labels.forEach((label, i) => {
+      const pct = Math.round(scores[i] * 100);
+      const bar = document.getElementById("bar_" + label);
+      const pctEl = document.getElementById("pct_" + label);
+      if (bar) bar.style.width = pct + "%";
+      if (pctEl) pctEl.innerText = pct + "%";
+
+      if (scores[i] > maxScore) {
+        maxScore = scores[i];
+        maxLabel = label;
+      }
+    });
+
+    // Only trigger if confidence above 85%
+    // and not background or others
+    const lower = maxLabel.toLowerCase();
+    if (maxScore > 0.85 &&
+        lower !== "background noise" &&
+        lower !== "others" &&
+        lower !== "_background_noise_") {
+      sendCommand(lower);
+    }
+
+  }, {
+    overlapFactor: 0.75,
+    probabilityThreshold: 0.85
+  });
+}
+
+function stopListening() {
+  if (recognizer) recognizer.stopListening();
+  document.getElementById("listenBtn").disabled = false;
+  document.getElementById("stopBtn").disabled = true;
+  document.getElementById("statusDiv").innerText =
+    "⏹ Stopped";
+  document.getElementById("commandDisplay").innerText = "---";
+}
+
+window.onload = loadModel;
+</script>
+
+</body>
+</html>
