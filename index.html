@@ -68,33 +68,68 @@
   🔵 Connect Bluetooth
 </button>
 
-<button class="btn" id="listenBtn" 
+<button class="btn" id="listenBtn"
         onclick="startListening()" disabled>
   🎤 Start Voice Control
 </button>
 
-<button class="btn" id="stopBtn" 
+<button class="btn" id="stopBtn"
         onclick="stopListening()" disabled>
   ⏹ Stop Listening
 </button>
 
 <div id="predictions"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
+<div id="debugDiv" style="font-size:12px;color:#aaa;margin-top:20px;"></div>
 
 <script>
-const MODEL_URL = 
+// Load scripts dynamically
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+const MODEL_URL =
   "https://teachablemachine.withgoogle.com/models/vWCoKIgKY/";
 
 let recognizer;
 let btCharacteristic;
 let lastCommand = "";
 let lastCommandTime = 0;
+let isListening = false;
+
+function debug(msg) {
+  const d = document.getElementById("debugDiv");
+  d.innerText = msg;
+  console.log(msg);
+}
+
+async function init() {
+  try {
+    debug("Loading TensorFlow...");
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"
+    );
+    debug("Loading Speech Commands...");
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"
+    );
+    debug("Libraries loaded! Loading model...");
+    await loadModel();
+  } catch(e) {
+    debug("Load error: " + e.message);
+    document.getElementById("statusDiv").innerText =
+      "❌ Failed to load: " + e.message;
+  }
+}
 
 async function loadModel() {
   try {
-    document.getElementById("statusDiv").innerText = 
+    document.getElementById("statusDiv").innerText =
       "Loading voice model...";
 
     recognizer = speechCommands.create(
@@ -106,28 +141,33 @@ async function loadModel() {
 
     await recognizer.ensureModelLoaded();
 
-    document.getElementById("statusDiv").innerText =
-      "✅ Model loaded! Connect Bluetooth now.";
+    const labels = recognizer.wordLabels();
+    debug("Model loaded! Labels: " + labels.join(", "));
 
-    setupBars();
+    document.getElementById("statusDiv").innerText =
+      "✅ Model loaded! Connect Bluetooth.";
+
+    document.getElementById("listenBtn").disabled = false;
+
+    setupBars(labels);
 
   } catch(e) {
+    debug("Model error: " + e.message);
     document.getElementById("statusDiv").innerText =
-      "❌ Error: " + e.message;
-    console.log(e);
+      "❌ Model error: " + e.message;
   }
 }
 
-function setupBars() {
-  const labels = recognizer.wordLabels();
+function setupBars(labels) {
   let html = "<h3>Voice Detection:</h3>";
   labels.forEach(label => {
+    const safeId = label.replace(/\s+/g, '_');
     html += `
       <div class="confidence">
         ${label}
-        <div class="bar" id="bar_${label}" 
+        <div class="bar" id="bar_${safeId}"
              style="width:0%"></div>
-        <span id="pct_${label}">0%</span>
+        <span id="pct_${safeId}">0%</span>
       </div>`;
   });
   document.getElementById("predictions").innerHTML = html;
@@ -136,7 +176,7 @@ function setupBars() {
 async function connectBluetooth() {
   try {
     document.getElementById("statusDiv").innerText =
-      "Connecting Bluetooth...";
+      "Connecting...";
 
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ name: "SmartCar_Voice" }],
@@ -157,20 +197,24 @@ async function connectBluetooth() {
       "✅ Bluetooth Connected!";
     document.getElementById("btBtn").innerText =
       "✅ Connected";
-    document.getElementById("listenBtn").disabled = false;
 
   } catch(e) {
     document.getElementById("statusDiv").innerText =
       "❌ BT Error: " + e.message;
+    debug("BT error: " + e.message);
   }
 }
 
 async function sendCommand(cmd) {
   const now = Date.now();
-  if (cmd === lastCommand && 
+  if (cmd === lastCommand &&
       now - lastCommandTime < 1500) return;
   lastCommand = cmd;
   lastCommandTime = now;
+
+  document.getElementById("commandDisplay").innerText =
+    "▶ " + cmd.toUpperCase();
+  debug("Sending: " + cmd);
 
   try {
     if (btCharacteristic) {
@@ -178,72 +222,105 @@ async function sendCommand(cmd) {
       await btCharacteristic.writeValue(
         encoder.encode(cmd)
       );
-      document.getElementById("commandDisplay").innerText =
-        "▶ " + cmd.toUpperCase();
     }
   } catch(e) {
-    console.log("Send error: " + e.message);
+    debug("Send error: " + e.message);
   }
 }
 
 async function startListening() {
   if (!recognizer) {
-    document.getElementById("statusDiv").innerText =
-      "Model not loaded!";
+    debug("Recognizer not ready!");
     return;
   }
 
-  document.getElementById("listenBtn").disabled = true;
-  document.getElementById("stopBtn").disabled = false;
-  document.getElementById("statusDiv").innerText =
-    "🎤 Listening...";
+  if (isListening) {
+    debug("Already listening!");
+    return;
+  }
 
-  recognizer.listen(result => {
-    const labels = recognizer.wordLabels();
-    const scores = result.scores;
+  try {
+    isListening = true;
+    document.getElementById("listenBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+    document.getElementById("statusDiv").innerText =
+      "🎤 Listening...";
+    debug("Starting listener...");
 
-    let maxScore = 0;
-    let maxLabel = "";
+    await recognizer.listen(
+      result => {
+        const labels = recognizer.wordLabels();
+        const scores = result.scores;
 
-    labels.forEach((label, i) => {
-      const pct = Math.round(scores[i] * 100);
-      const bar = document.getElementById("bar_" + label);
-      const pctEl = document.getElementById("pct_" + label);
-      if (bar) bar.style.width = pct + "%";
-      if (pctEl) pctEl.innerText = pct + "%";
+        let maxScore = 0;
+        let maxLabel = "";
 
-      if (scores[i] > maxScore) {
-        maxScore = scores[i];
-        maxLabel = label;
+        labels.forEach((label, i) => {
+          const safeId = label.replace(/\s+/g, '_');
+          const pct = Math.round(scores[i] * 100);
+          const bar = document.getElementById(
+            "bar_" + safeId
+          );
+          const pctEl = document.getElementById(
+            "pct_" + safeId
+          );
+          if (bar) bar.style.width = pct + "%";
+          if (pctEl) pctEl.innerText = pct + "%";
+
+          if (scores[i] > maxScore) {
+            maxScore = scores[i];
+            maxLabel = label;
+          }
+        });
+
+        debug("Top: " + maxLabel +
+              " (" + Math.round(maxScore * 100) + "%)");
+
+        const lower = maxLabel.toLowerCase();
+        if (maxScore > 0.85 &&
+            lower !== "background noise" &&
+            lower !== "others" &&
+            lower !== "_background_noise_") {
+          sendCommand(lower);
+        }
+      },
+      {
+        overlapFactor: 0.75,
+        probabilityThreshold: 0.5
       }
-    });
+    );
 
-    // Only trigger if confidence above 85%
-    // and not background or others
-    const lower = maxLabel.toLowerCase();
-    if (maxScore > 0.85 &&
-        lower !== "background noise" &&
-        lower !== "others" &&
-        lower !== "_background_noise_") {
-      sendCommand(lower);
-    }
+    debug("Listener started!");
 
-  }, {
-    overlapFactor: 0.75,
-    probabilityThreshold: 0.85
-  });
+  } catch(e) {
+    isListening = false;
+    debug("Listen error: " + e.message);
+    document.getElementById("statusDiv").innerText =
+      "❌ Listen error: " + e.message;
+    document.getElementById("listenBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+  }
 }
 
 function stopListening() {
-  if (recognizer) recognizer.stopListening();
+  try {
+    if (recognizer && isListening) {
+      recognizer.stopListening();
+    }
+  } catch(e) {
+    debug("Stop error: " + e.message);
+  }
+  isListening = false;
   document.getElementById("listenBtn").disabled = false;
   document.getElementById("stopBtn").disabled = true;
   document.getElementById("statusDiv").innerText =
     "⏹ Stopped";
-  document.getElementById("commandDisplay").innerText = "---";
+  document.getElementById("commandDisplay").innerText =
+    "---";
 }
 
-window.onload = loadModel;
+// Start loading when page opens
+window.onload = init;
 </script>
 
 </body>
