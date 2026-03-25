@@ -29,9 +29,24 @@
       font-weight: bold;
       cursor: pointer;
     }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .row .btn { width: 50%; }
     #btBtn { background: #0066ff; color: white; }
     #listenBtn { background: #00aa44; color: white; }
     #stopBtn { background: #cc0000; color: white; }
+    #autoBtn { background: #ff6600; color: white; }
+    #manualBtn { background: #9900cc; color: white; }
+    .modeDisplay {
+      font-size: 16px;
+      padding: 10px;
+      background: #16213e;
+      border-radius: 10px;
+      margin: 8px 0;
+    }
     .confidence {
       background: #16213e;
       padding: 10px;
@@ -63,26 +78,43 @@
 <h1>🚗 Smart Car Voice Control</h1>
 <div class="status" id="statusDiv">Loading model...</div>
 <div id="commandDisplay">---</div>
+<div class="modeDisplay" id="modeDisplay">
+  Mode: AUTO AVOID 🚧
+</div>
 
+<!-- Bluetooth Connect -->
 <button class="btn" id="btBtn" onclick="connectBluetooth()">
   🔵 Connect Bluetooth
 </button>
 
+<!-- Mode Switching -->
+<div class="row">
+  <button class="btn" id="autoBtn"
+          onclick="setMode('auto')" disabled>
+    🚧 Auto Avoid
+  </button>
+  <button class="btn" id="manualBtn"
+          onclick="setMode('manual')" disabled>
+    🎤 Manual Mode
+  </button>
+</div>
+
+<!-- Voice Control -->
 <button class="btn" id="listenBtn"
         onclick="startListening()" disabled>
   🎤 Start Voice Control
 </button>
-
 <button class="btn" id="stopBtn"
         onclick="stopListening()" disabled>
   ⏹ Stop Listening
 </button>
 
 <div id="predictions"></div>
-<div id="debugDiv" style="font-size:12px;color:#aaa;margin-top:20px;"></div>
+<div id="debugDiv"
+     style="font-size:12px;color:#aaa;margin-top:20px;">
+</div>
 
 <script>
-// Load scripts dynamically
 function loadScript(url) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
@@ -101,11 +133,22 @@ let btCharacteristic;
 let lastCommand = "";
 let lastCommandTime = 0;
 let isListening = false;
+let currentMode = "auto";
 
 function debug(msg) {
-  const d = document.getElementById("debugDiv");
-  d.innerText = msg;
+  document.getElementById("debugDiv").innerText = msg;
   console.log(msg);
+}
+
+function updateModeDisplay() {
+  const d = document.getElementById("modeDisplay");
+  if (currentMode === "auto") {
+    d.innerText = "Mode: AUTO AVOID 🚧";
+    d.style.color = "#ff6600";
+  } else {
+    d.innerText = "Mode: MANUAL / VOICE 🎤";
+    d.style.color = "#00ff88";
+  }
 }
 
 async function init() {
@@ -118,12 +161,12 @@ async function init() {
     await loadScript(
       "https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"
     );
-    debug("Libraries loaded! Loading model...");
+    debug("Libraries loaded!");
     await loadModel();
   } catch(e) {
     debug("Load error: " + e.message);
     document.getElementById("statusDiv").innerText =
-      "❌ Failed to load: " + e.message;
+      "❌ Failed: " + e.message;
   }
 }
 
@@ -148,7 +191,6 @@ async function loadModel() {
       "✅ Model loaded! Connect Bluetooth.";
 
     document.getElementById("listenBtn").disabled = false;
-
     setupBars(labels);
 
   } catch(e) {
@@ -197,11 +239,47 @@ async function connectBluetooth() {
       "✅ Bluetooth Connected!";
     document.getElementById("btBtn").innerText =
       "✅ Connected";
+    document.getElementById("autoBtn").disabled = false;
+    document.getElementById("manualBtn").disabled = false;
+
+    debug("BLE connected!");
 
   } catch(e) {
     document.getElementById("statusDiv").innerText =
       "❌ BT Error: " + e.message;
     debug("BT error: " + e.message);
+  }
+}
+
+async function sendRaw(cmd) {
+  try {
+    if (btCharacteristic) {
+      const encoder = new TextEncoder();
+      await btCharacteristic.writeValue(
+        encoder.encode(cmd)
+      );
+      debug("Sent: " + cmd);
+    }
+  } catch(e) {
+    debug("Send error: " + e.message);
+  }
+}
+
+async function setMode(mode) {
+  currentMode = mode;
+  updateModeDisplay();
+  if (mode === "auto") {
+    await sendRaw("a");
+    // Stop listening in auto mode
+    if (isListening) stopListening();
+    document.getElementById("listenBtn").disabled = true;
+    document.getElementById("statusDiv").innerText =
+      "🚧 Auto Avoid Mode Active";
+  } else {
+    await sendRaw("m");
+    document.getElementById("listenBtn").disabled = false;
+    document.getElementById("statusDiv").innerText =
+      "🎤 Manual Mode - Start Voice Control";
   }
 }
 
@@ -214,18 +292,8 @@ async function sendCommand(cmd) {
 
   document.getElementById("commandDisplay").innerText =
     "▶ " + cmd.toUpperCase();
-  debug("Sending: " + cmd);
 
-  try {
-    if (btCharacteristic) {
-      const encoder = new TextEncoder();
-      await btCharacteristic.writeValue(
-        encoder.encode(cmd)
-      );
-    }
-  } catch(e) {
-    debug("Send error: " + e.message);
-  }
+  await sendRaw(cmd);
 }
 
 async function startListening() {
@@ -233,9 +301,10 @@ async function startListening() {
     debug("Recognizer not ready!");
     return;
   }
-
-  if (isListening) {
-    debug("Already listening!");
+  if (isListening) return;
+  if (currentMode !== "manual") {
+    document.getElementById("statusDiv").innerText =
+      "⚠️ Switch to Manual Mode first!";
     return;
   }
 
@@ -244,7 +313,7 @@ async function startListening() {
     document.getElementById("listenBtn").disabled = true;
     document.getElementById("stopBtn").disabled = false;
     document.getElementById("statusDiv").innerText =
-      "🎤 Listening...";
+      "🎤 Listening for your voice...";
     debug("Starting listener...");
 
     await recognizer.listen(
@@ -314,12 +383,11 @@ function stopListening() {
   document.getElementById("listenBtn").disabled = false;
   document.getElementById("stopBtn").disabled = true;
   document.getElementById("statusDiv").innerText =
-    "⏹ Stopped";
+    "⏹ Stopped listening";
   document.getElementById("commandDisplay").innerText =
     "---";
 }
 
-// Start loading when page opens
 window.onload = init;
 </script>
 
