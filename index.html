@@ -1,8 +1,7 @@
-```html
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Smart Car Voice Control</title>
+  <title>Smart Car Control</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -12,36 +11,31 @@
       color: white;
       padding: 20px;
     }
-    h1 { font-size: 22px; color: #00d4ff; }
+    h1 { font-size: 22px; color: #00d4ff; margin-bottom: 10px; }
     .status {
       background: #16213e;
-      padding: 15px;
+      padding: 12px;
       border-radius: 10px;
-      margin: 10px 0;
-      font-size: 16px;
+      margin: 8px 0;
+      font-size: 15px;
     }
     .btn {
       width: 100%;
       padding: 15px;
-      margin: 8px 0;
+      margin: 6px 0;
       border: none;
       border-radius: 10px;
       font-size: 16px;
       font-weight: bold;
       cursor: pointer;
     }
-    .row {
-      display: flex;
-      gap: 8px;
-      margin: 8px 0;
-    }
-    .row .btn { width: 33%; }
-    #btBtn { background: #0066ff; color: white; }
+    .row { display: flex; gap: 8px; margin: 6px 0; }
+    .row .btn { width: 50%; }
+    #btBtn      { background: #0066ff; color: white; }
     #gestureBtn { background: #cc6600; color: white; }
-    #voiceBtn { background: #006600; color: white; }
-    #autoBtn { background: #660066; color: white; }
-    #listenBtn { background: #00aa44; color: white; }
-    #stopBtn { background: #cc0000; color: white; }
+    #voiceBtn   { background: #006633; color: white; }
+    #listenBtn  { background: #00aa44; color: white; }
+    #stopBtn    { background: #cc0000; color: white; }
     .modeDisplay {
       font-size: 18px;
       font-weight: bold;
@@ -50,21 +44,6 @@
       border-radius: 10px;
       margin: 8px 0;
     }
-    .confidence {
-      background: #16213e;
-      padding: 10px;
-      border-radius: 8px;
-      margin: 5px 0;
-      text-align: left;
-      font-size: 14px;
-    }
-    .bar {
-      height: 20px;
-      background: #00d4ff;
-      border-radius: 5px;
-      margin-top: 5px;
-      transition: width 0.2s;
-    }
     #commandDisplay {
       font-size: 28px;
       font-weight: bold;
@@ -72,221 +51,222 @@
       padding: 15px;
       background: #16213e;
       border-radius: 10px;
-      margin: 10px 0;
+      margin: 8px 0;
+      min-height: 60px;
     }
-    .active {
-      border: 3px solid #00ff88 !important;
+    .confidence {
+      background: #16213e;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin: 4px 0;
+      text-align: left;
+      font-size: 13px;
     }
+    .bar {
+      height: 18px;
+      background: #00d4ff;
+      border-radius: 5px;
+      margin-top: 4px;
+      transition: width 0.2s;
+      min-width: 2px;
+    }
+    .active-mode { border: 3px solid #00ff88; }
+    #debugDiv { font-size: 11px; color: #888; margin-top: 15px; }
   </style>
 </head>
 <body>
 
 <h1>🚗 Smart Car Control</h1>
-<div class="status" id="statusDiv">
-  Loading model...
-</div>
-<div id="commandDisplay">---</div>
-<div class="modeDisplay" id="modeDisplay">
-  Mode: GESTURE 🤚
-</div>
 
-<button class="btn" id="btBtn" onclick="connectBluetooth()">
-  🔵 Connect Bluetooth
-</button>
+<div class="status" id="statusDiv">Loading model...</div>
+
+<div id="commandDisplay">---</div>
+
+<div class="modeDisplay" id="modeDisplay">Mode: GESTURE 🤚</div>
+
+<button class="btn" id="btBtn" onclick="connectBluetooth()">🔵 Connect Bluetooth</button>
 
 <div class="row">
   <button class="btn" id="gestureBtn" onclick="setMode('gesture')" disabled>🤚 Gesture</button>
-  <button class="btn" id="voiceBtn" onclick="setMode('voice')" disabled>🎤 Voice</button>
-  <button class="btn" id="autoBtn" onclick="setMode('auto')" disabled>🚗 Auto</button>
+  <button class="btn" id="voiceBtn"   onclick="setMode('voice')"   disabled>🎤 Voice</button>
 </div>
 
-<button class="btn" id="listenBtn" onclick="startListening()" disabled>🎤 Start Listening</button>
-<button class="btn" id="stopBtn" onclick="stopListening()" disabled>⏹ Stop Listening</button>
+<button class="btn" id="listenBtn" onclick="startListening()" style="display:none;" disabled>🎤 Start Listening</button>
+<button class="btn" id="stopBtn"   onclick="stopListening()"  style="display:none;" disabled>⏹ Stop Listening</button>
 
 <div id="predictions"></div>
-<div id="debugDiv" style="font-size:12px;color:#aaa;margin-top:20px;"></div>
+<div id="debugDiv"></div>
 
 <script>
-function loadScript(url) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = url;
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
 const MODEL_URL = "https://teachablemachine.withgoogle.com/models/vWCoKIgKY/";
+const THRESHOLD = 0.85;
 
-let recognizer;
-let btCharacteristic;
-let lastCommand = "";
-let lastCommandTime = 0;
+let recognizer, btCharacteristic;
 let isListening = false;
 let currentMode = "gesture";
+let lastCommand = "";
+let lastCommandTime = 0;
 
-function debug(msg) {
+const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+function log(msg) {
   document.getElementById("debugDiv").innerText = msg;
   console.log(msg);
 }
 
-function updateModeDisplay() {
-  const d = document.getElementById("modeDisplay");
-  const gBtn = document.getElementById("gestureBtn");
-  const vBtn = document.getElementById("voiceBtn");
-  const aBtn = document.getElementById("autoBtn");
-
-  gBtn.classList.remove("active");
-  vBtn.classList.remove("active");
-  aBtn.classList.remove("active");
-
-  if (currentMode === "gesture") {
-    d.innerText = "Mode: GESTURE 🤚";
-    d.style.color = "#cc6600";
-    gBtn.classList.add("active");
-    document.getElementById("listenBtn").style.display = "none";
-    document.getElementById("stopBtn").style.display = "none";
-  } else if (currentMode === "voice") {
-    d.innerText = "Mode: VOICE 🎤 (Obstacle ON)";
-    d.style.color = "#00ff88";
-    vBtn.classList.add("active");
-    document.getElementById("listenBtn").style.display = "block";
-    document.getElementById("stopBtn").style.display = "block";
-    document.getElementById("listenBtn").disabled = false;
-  } else if (currentMode === "auto") {
-    d.innerText = "Mode: AUTO 🚗 (Obstacle ON)";
-    d.style.color = "#cc00cc";
-    aBtn.classList.add("active");
-    document.getElementById("listenBtn").style.display = "none";
-    document.getElementById("stopBtn").style.display = "none";
-    if (isListening) stopListening();
-  }
+// ── Load TF + Model ────────────────────────────────────────
+function loadScript(url) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = url; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
 }
 
 async function init() {
   try {
+    document.getElementById("statusDiv").innerText = "Loading TensorFlow...";
     await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js");
     await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js");
-    await loadModel();
+    document.getElementById("statusDiv").innerText = "Loading voice model...";
+    recognizer = speechCommands.create("BROWSER_FFT", undefined, MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+    await recognizer.ensureModelLoaded();
+    document.getElementById("statusDiv").innerText = "✅ Model ready! Connect Bluetooth.";
+    buildBars();
+    log("Model loaded OK");
   } catch(e) {
-    debug(e.message);
+    document.getElementById("statusDiv").innerText = "❌ Load failed: " + e.message;
+    log("Error: " + e.message);
   }
 }
 
-async function loadModel() {
-  recognizer = speechCommands.create(
-    "BROWSER_FFT",
-    undefined,
-    MODEL_URL + "model.json",
-    MODEL_URL + "metadata.json"
-  );
-
-  await recognizer.ensureModelLoaded();
-  setupBars(recognizer.wordLabels());
-  updateModeDisplay();
-  document.getElementById("statusDiv").innerText = "✅ Model loaded! Connect Bluetooth.";
-}
-
-function setupBars(labels) {
-  let html = "<h3>Voice Detection:</h3>";
+// ── Confidence Bars ────────────────────────────────────────
+function buildBars() {
+  const labels = recognizer.wordLabels();
+  let html = "<h3 style='margin:10px 0 5px'>Voice Detection:</h3>";
   labels.forEach(label => {
-    const sid = label.replace(/\s+/g, '_');
+    const id = label.replace(/\s+/g, '_');
     html += `<div class="confidence">${label}
-      <div class="bar" id="bar_${sid}" style="width:0%"></div>
-      <span id="pct_${sid}">0%</span>
+      <div class="bar" id="bar_${id}" style="width:0%"></div>
+      <span id="pct_${id}" style="font-size:12px;color:#aaa;">0%</span>
     </div>`;
   });
   document.getElementById("predictions").innerHTML = html;
 }
 
+// ── Bluetooth ──────────────────────────────────────────────
 async function connectBluetooth() {
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: "HybridCar_Hand" }],
-    optionalServices: ["4fafc201-1fb5-459e-8fcc-c5c9c331914b"]
-  });
+  try {
+    document.getElementById("statusDiv").innerText = "Connecting...";
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "HybridCar_Hand" }],
+      optionalServices: [SERVICE_UUID]
+    });
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    btCharacteristic = await service.getCharacteristic(CHAR_UUID);
 
-  const server = await device.gatt.connect();
-  const service = await server.getPrimaryService("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
-  btCharacteristic = await service.getCharacteristic("beb5483e-36e1-4688-b7f5-ea07361b26a8");
-
-  document.getElementById("statusDiv").innerText = "✅ Bluetooth Connected!";
-  document.getElementById("btBtn").innerText = "✅ Connected";
-
-  document.getElementById("gestureBtn").disabled = false;
-  document.getElementById("voiceBtn").disabled = false;
-  document.getElementById("autoBtn").disabled = false;
-
-  await sendRaw("MODE:1");
-}
-
-async function sendRaw(cmd) {
-  if (btCharacteristic) {
-    const encoder = new TextEncoder();
-    await btCharacteristic.writeValue(encoder.encode(cmd));
+    document.getElementById("statusDiv").innerText = "✅ Bluetooth Connected!";
+    document.getElementById("btBtn").innerText = "✅ Connected";
+    document.getElementById("gestureBtn").disabled = false;
+    document.getElementById("voiceBtn").disabled   = false;
+    updateModeDisplay();
+    await sendRaw("MODE:1");
+    log("BLE connected");
+  } catch(e) {
+    document.getElementById("statusDiv").innerText = "❌ BT Error: " + e.message;
+    log("BT error: " + e.message);
   }
 }
 
+async function sendRaw(data) {
+  try {
+    if (btCharacteristic) {
+      await btCharacteristic.writeValue(new TextEncoder().encode(data));
+      log("Sent: " + data);
+    }
+  } catch(e) { log("Send error: " + e.message); }
+}
+
+// ── Mode Switching ─────────────────────────────────────────
 async function setMode(mode) {
   currentMode = mode;
   updateModeDisplay();
-
-  if (mode === "gesture") await sendRaw("MODE:1");
-  else if (mode === "voice") await sendRaw("MODE:2");
-  else if (mode === "auto") await sendRaw("MODE:3");
+  await sendRaw(mode === "gesture" ? "MODE:1" : "MODE:2");
+  if (mode !== "voice" && isListening) stopListening();
 }
 
-async function sendCommand(cmd) {
-  const now = Date.now();
-  if (cmd === lastCommand && now - lastCommandTime < 1500) return;
+function updateModeDisplay() {
+  const d = document.getElementById("modeDisplay");
+  document.getElementById("gestureBtn").classList.remove("active-mode");
+  document.getElementById("voiceBtn").classList.remove("active-mode");
 
-  lastCommand = cmd;
-  lastCommandTime = now;
-
-  document.getElementById("commandDisplay").innerText = "▶ " + cmd.toUpperCase();
-  await sendRaw("CMD:" + cmd.toUpperCase());
+  if (currentMode === "gesture") {
+    d.innerText = "Mode: GESTURE 🤚";
+    d.style.color = "#ffaa44";
+    document.getElementById("gestureBtn").classList.add("active-mode");
+    document.getElementById("listenBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display   = "none";
+  } else {
+    d.innerText = "Mode: VOICE 🎤";
+    d.style.color = "#00ff88";
+    document.getElementById("voiceBtn").classList.add("active-mode");
+    document.getElementById("listenBtn").style.display = "block";
+    document.getElementById("stopBtn").style.display   = "block";
+    document.getElementById("listenBtn").disabled = false;
+  }
 }
 
+// ── Voice Listening ────────────────────────────────────────
 async function startListening() {
-  if (!recognizer || currentMode !== "voice") return;
-
+  if (!recognizer || isListening || currentMode !== "voice") return;
   isListening = true;
   document.getElementById("listenBtn").disabled = true;
-  document.getElementById("stopBtn").disabled = false;
+  document.getElementById("stopBtn").disabled   = false;
+  document.getElementById("statusDiv").innerText = "🎤 Listening...";
 
   await recognizer.listen(result => {
     const labels = recognizer.wordLabels();
     const scores = result.scores;
-
-    let maxScore = 0;
-    let maxLabel = "";
+    let maxScore = 0, maxLabel = "";
 
     labels.forEach((label, i) => {
-      if (scores[i] > maxScore) {
-        maxScore = scores[i];
-        maxLabel = label;
-      }
+      const id  = label.replace(/\s+/g, '_');
+      const pct = Math.round(scores[i] * 100);
+      const bar = document.getElementById("bar_" + id);
+      const pctEl = document.getElementById("pct_" + id);
+      if (bar)   bar.style.width = pct + "%";
+      if (pctEl) pctEl.innerText = pct + "%";
+      if (scores[i] > maxScore) { maxScore = scores[i]; maxLabel = label; }
     });
 
-    if (maxScore > 0.85 && !["_background_noise_", "background noise", "others"].includes(maxLabel.toLowerCase())) {
-      sendCommand(maxLabel.toLowerCase());
+    const lower = maxLabel.toLowerCase();
+    if (maxScore >= THRESHOLD && lower !== "background noise" && lower !== "others" && lower !== "_background_noise_") {
+      const now = Date.now();
+      if (lower !== lastCommand || now - lastCommandTime > 1500) {
+        lastCommand = lower;
+        lastCommandTime = now;
+        document.getElementById("commandDisplay").innerText = "▶ " + lower.toUpperCase();
+        sendRaw("CMD:" + lower.toUpperCase());
+      }
     }
-
   }, { overlapFactor: 0.75, probabilityThreshold: 0.5 });
+
+  log("Listening started");
 }
 
 function stopListening() {
   if (recognizer && isListening) recognizer.stopListening();
   isListening = false;
-
   document.getElementById("listenBtn").disabled = false;
-  document.getElementById("stopBtn").disabled = true;
+  document.getElementById("stopBtn").disabled   = true;
+  document.getElementById("statusDiv").innerText = "⏹ Stopped";
   document.getElementById("commandDisplay").innerText = "---";
+  log("Listening stopped");
 }
 
 window.onload = init;
 </script>
-
 </body>
 </html>
-```
