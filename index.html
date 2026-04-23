@@ -2,74 +2,28 @@
 <html>
 <head>
   <title>Smart Car Control</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #1a1a2e;
-      color: white;
-      padding: 20px;
-    }
+    body { font-family: Arial, sans-serif; text-align: center; background: #1a1a2e; color: white; padding: 20px; user-select: none; }
     h1 { font-size: 22px; color: #00d4ff; margin-bottom: 10px; }
-    .status {
-      background: #16213e;
-      padding: 12px;
-      border-radius: 10px;
-      margin: 8px 0;
-      font-size: 15px;
-    }
-    .btn {
-      width: 100%;
-      padding: 15px;
-      margin: 6px 0;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-    }
+    .status { background: #16213e; padding: 12px; border-radius: 10px; margin: 8px 0; font-size: 15px; }
+    .btn { width: 100%; padding: 15px; margin: 6px 0; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; touch-action: manipulation; }
     .row { display: flex; gap: 8px; margin: 6px 0; }
     .row .btn { width: 50%; }
+    
     #btBtn      { background: #0066ff; color: white; }
     #gestureBtn { background: #cc6600; color: white; }
     #voiceBtn   { background: #006633; color: white; }
+    #autoBtn    { background: #8e44ad; color: white; }
+    #remoteBtn  { background: #b30059; color: white; }
     #listenBtn  { background: #00aa44; color: white; }
     #stopBtn    { background: #cc0000; color: white; }
-    .modeDisplay {
-      font-size: 18px;
-      font-weight: bold;
-      padding: 12px;
-      background: #16213e;
-      border-radius: 10px;
-      margin: 8px 0;
-    }
-    #commandDisplay {
-      font-size: 28px;
-      font-weight: bold;
-      color: #00ff88;
-      padding: 15px;
-      background: #16213e;
-      border-radius: 10px;
-      margin: 8px 0;
-      min-height: 60px;
-    }
-    .confidence {
-      background: #16213e;
-      padding: 8px 12px;
-      border-radius: 8px;
-      margin: 4px 0;
-      text-align: left;
-      font-size: 13px;
-    }
-    .bar {
-      height: 18px;
-      background: #00d4ff;
-      border-radius: 5px;
-      margin-top: 4px;
-      transition: width 0.2s;
-      min-width: 2px;
-    }
+    
+    .dpad { background: #334; color: #00d4ff; font-size: 20px; border: 2px solid #00d4ff; }
+    .dpad:active { background: #00d4ff; color: #1a1a2e; }
+
+    .modeDisplay { font-size: 18px; font-weight: bold; padding: 12px; background: #16213e; border-radius: 10px; margin: 8px 0; }
+    #commandDisplay { font-size: 28px; font-weight: bold; color: #00ff88; padding: 15px; background: #16213e; border-radius: 10px; margin: 8px 0; min-height: 60px; }
     .active-mode { border: 3px solid #00ff88; }
     #debugDiv { font-size: 11px; color: #888; margin-top: 15px; }
   </style>
@@ -77,11 +31,8 @@
 <body>
 
 <h1>🚗 Smart Car Control</h1>
-
 <div class="status" id="statusDiv">Loading model...</div>
-
 <div id="commandDisplay">---</div>
-
 <div class="modeDisplay" id="modeDisplay">Mode: GESTURE 🤚</div>
 
 <button class="btn" id="btBtn" onclick="connectBluetooth()">🔵 Connect Bluetooth</button>
@@ -90,11 +41,23 @@
   <button class="btn" id="gestureBtn" onclick="setMode('gesture')" disabled>🤚 Gesture</button>
   <button class="btn" id="voiceBtn"   onclick="setMode('voice')"   disabled>🎤 Voice</button>
 </div>
+<div class="row">
+  <button class="btn" id="autoBtn"    onclick="setMode('auto')"    disabled>🤖 Auto</button>
+  <button class="btn" id="remoteBtn"  onclick="setMode('remote')"  disabled>🎮 Remote</button>
+</div>
 
 <button class="btn" id="listenBtn" onclick="startListening()" style="display:none;" disabled>🎤 Start Listening</button>
 <button class="btn" id="stopBtn"   onclick="stopListening()"  style="display:none;" disabled>⏹ Stop Listening</button>
 
-<div id="predictions"></div>
+<div id="remoteControls" style="display:none; margin-top: 20px;">
+  <button class="btn dpad" onpointerdown="sendRemote('FORWARD')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬆️ Forward</button>
+  <div class="row">
+    <button class="btn dpad" onpointerdown="sendRemote('LEFT')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬅️ Left</button>
+    <button class="btn dpad" onpointerdown="sendRemote('RIGHT')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">➡️ Right</button>
+  </div>
+  <button class="btn dpad" onpointerdown="sendRemote('BACKWARD')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬇️ Backward</button>
+</div>
+
 <div id="debugDiv"></div>
 
 <script>
@@ -110,17 +73,11 @@ let lastCommandTime = 0;
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-function log(msg) {
-  document.getElementById("debugDiv").innerText = msg;
-  console.log(msg);
-}
+function log(msg) { document.getElementById("debugDiv").innerText = msg; }
 
-// ── Load TF + Model ────────────────────────────────────────
 function loadScript(url) {
   return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = url; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
+    const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = rej; document.head.appendChild(s);
   });
 }
 
@@ -133,84 +90,69 @@ async function init() {
     recognizer = speechCommands.create("BROWSER_FFT", undefined, MODEL_URL + "model.json", MODEL_URL + "metadata.json");
     await recognizer.ensureModelLoaded();
     document.getElementById("statusDiv").innerText = "✅ Model ready! Connect Bluetooth.";
-    buildBars();
-    log("Model loaded OK");
-  } catch(e) {
-    document.getElementById("statusDiv").innerText = "❌ Load failed: " + e.message;
-    log("Error: " + e.message);
-  }
+  } catch(e) { document.getElementById("statusDiv").innerText = "❌ Load failed: " + e.message; }
 }
 
-// ── Confidence Bars ────────────────────────────────────────
-function buildBars() {
-  const labels = recognizer.wordLabels();
-  let html = "<h3 style='margin:10px 0 5px'>Voice Detection:</h3>";
-  labels.forEach(label => {
-    const id = label.replace(/\s+/g, '_');
-    html += `<div class="confidence">${label}
-      <div class="bar" id="bar_${id}" style="width:0%"></div>
-      <span id="pct_${id}" style="font-size:12px;color:#aaa;">0%</span>
-    </div>`;
-  });
-  document.getElementById("predictions").innerHTML = html;
-}
-
-// ── Bluetooth ──────────────────────────────────────────────
 async function connectBluetooth() {
   try {
     document.getElementById("statusDiv").innerText = "Connecting...";
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "HybridCar_Hand" }],
-      optionalServices: [SERVICE_UUID]
-    });
+    const device = await navigator.bluetooth.requestDevice({ filters: [{ name: "HybridCar_Hand" }], optionalServices: [SERVICE_UUID] });
     const server  = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
     btCharacteristic = await service.getCharacteristic(CHAR_UUID);
 
     document.getElementById("statusDiv").innerText = "✅ Bluetooth Connected!";
     document.getElementById("btBtn").innerText = "✅ Connected";
-    document.getElementById("gestureBtn").disabled = false;
-    document.getElementById("voiceBtn").disabled   = false;
+    ["gestureBtn", "voiceBtn", "autoBtn", "remoteBtn"].forEach(id => document.getElementById(id).disabled = false);
     updateModeDisplay();
     await sendRaw("MODE:1");
-    log("BLE connected");
-  } catch(e) {
-    document.getElementById("statusDiv").innerText = "❌ BT Error: " + e.message;
-    log("BT error: " + e.message);
-  }
+  } catch(e) { document.getElementById("statusDiv").innerText = "❌ BT Error: " + e.message; }
 }
 
 async function sendRaw(data) {
-  try {
-    if (btCharacteristic) {
-      await btCharacteristic.writeValue(new TextEncoder().encode(data));
-      log("Sent: " + data);
-    }
-  } catch(e) { log("Send error: " + e.message); }
+  try { if (btCharacteristic) await btCharacteristic.writeValue(new TextEncoder().encode(data)); log("Sent: " + data); } 
+  catch(e) { log("Send error: " + e.message); }
 }
 
-// ── Mode Switching ─────────────────────────────────────────
+function sendRemote(cmd) {
+  if (currentMode !== "remote") return;
+  document.getElementById("commandDisplay").innerText = "🎮 " + cmd;
+  sendRaw("CMD:" + cmd);
+}
+
 async function setMode(mode) {
   currentMode = mode;
   updateModeDisplay();
-  await sendRaw(mode === "gesture" ? "MODE:1" : "MODE:2");
+  
+  let modeCode = "MODE:1";
+  if(mode === "voice") modeCode = "MODE:2";
+  if(mode === "auto") modeCode = "MODE:3";
+  if(mode === "remote") modeCode = "MODE:4";
+  
+  await sendRaw(modeCode);
   if (mode !== "voice" && isListening) stopListening();
 }
 
 function updateModeDisplay() {
   const d = document.getElementById("modeDisplay");
-  document.getElementById("gestureBtn").classList.remove("active-mode");
-  document.getElementById("voiceBtn").classList.remove("active-mode");
+  ["gestureBtn", "voiceBtn", "autoBtn", "remoteBtn"].forEach(id => document.getElementById(id).classList.remove("active-mode"));
+
+  document.getElementById("listenBtn").style.display = "none";
+  document.getElementById("stopBtn").style.display   = "none";
+  document.getElementById("remoteControls").style.display = "none";
 
   if (currentMode === "gesture") {
-    d.innerText = "Mode: GESTURE 🤚";
-    d.style.color = "#ffaa44";
+    d.innerText = "Mode: GESTURE 🤚"; d.style.color = "#ffaa44";
     document.getElementById("gestureBtn").classList.add("active-mode");
-    document.getElementById("listenBtn").style.display = "none";
-    document.getElementById("stopBtn").style.display   = "none";
+  } else if (currentMode === "auto") {
+    d.innerText = "Mode: AUTO PILOT 🤖"; d.style.color = "#8e44ad";
+    document.getElementById("autoBtn").classList.add("active-mode");
+  } else if (currentMode === "remote") {
+    d.innerText = "Mode: REMOTE 🎮"; d.style.color = "#b30059";
+    document.getElementById("remoteBtn").classList.add("active-mode");
+    document.getElementById("remoteControls").style.display = "block";
   } else {
-    d.innerText = "Mode: VOICE 🎤";
-    d.style.color = "#00ff88";
+    d.innerText = "Mode: VOICE 🎤"; d.style.color = "#00ff88";
     document.getElementById("voiceBtn").classList.add("active-mode");
     document.getElementById("listenBtn").style.display = "block";
     document.getElementById("stopBtn").style.display   = "block";
@@ -218,52 +160,36 @@ function updateModeDisplay() {
   }
 }
 
-// ── Voice Listening ────────────────────────────────────────
 async function startListening() {
   if (!recognizer || isListening || currentMode !== "voice") return;
   isListening = true;
-  document.getElementById("listenBtn").disabled = true;
-  document.getElementById("stopBtn").disabled   = false;
+  document.getElementById("listenBtn").disabled = true; document.getElementById("stopBtn").disabled = false;
   document.getElementById("statusDiv").innerText = "🎤 Listening...";
 
   await recognizer.listen(result => {
     const labels = recognizer.wordLabels();
     const scores = result.scores;
     let maxScore = 0, maxLabel = "";
-
-    labels.forEach((label, i) => {
-      const id  = label.replace(/\s+/g, '_');
-      const pct = Math.round(scores[i] * 100);
-      const bar = document.getElementById("bar_" + id);
-      const pctEl = document.getElementById("pct_" + id);
-      if (bar)   bar.style.width = pct + "%";
-      if (pctEl) pctEl.innerText = pct + "%";
-      if (scores[i] > maxScore) { maxScore = scores[i]; maxLabel = label; }
-    });
+    labels.forEach((label, i) => { if (scores[i] > maxScore) { maxScore = scores[i]; maxLabel = label; } });
 
     const lower = maxLabel.toLowerCase();
     if (maxScore >= THRESHOLD && lower !== "background noise" && lower !== "others" && lower !== "_background_noise_") {
       const now = Date.now();
       if (lower !== lastCommand || now - lastCommandTime > 1500) {
-        lastCommand = lower;
-        lastCommandTime = now;
+        lastCommand = lower; lastCommandTime = now;
         document.getElementById("commandDisplay").innerText = "▶ " + lower.toUpperCase();
         sendRaw("CMD:" + lower.toUpperCase());
       }
     }
   }, { overlapFactor: 0.75, probabilityThreshold: 0.5 });
-
-  log("Listening started");
 }
 
 function stopListening() {
   if (recognizer && isListening) recognizer.stopListening();
   isListening = false;
-  document.getElementById("listenBtn").disabled = false;
-  document.getElementById("stopBtn").disabled   = true;
+  document.getElementById("listenBtn").disabled = false; document.getElementById("stopBtn").disabled = true;
   document.getElementById("statusDiv").innerText = "⏹ Stopped";
   document.getElementById("commandDisplay").innerText = "---";
-  log("Listening stopped");
 }
 
 window.onload = init;
