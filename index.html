@@ -1,199 +1,1382 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Smart Car Control</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #1a1a2e; color: white; padding: 20px; user-select: none; }
-    h1 { font-size: 22px; color: #00d4ff; margin-bottom: 10px; }
-    .status { background: #16213e; padding: 12px; border-radius: 10px; margin: 8px 0; font-size: 15px; }
-    .btn { width: 100%; padding: 15px; margin: 6px 0; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; touch-action: manipulation; }
-    .row { display: flex; gap: 8px; margin: 6px 0; }
-    .row .btn { width: 50%; }
-    
-    #btBtn      { background: #0066ff; color: white; }
-    #gestureBtn { background: #cc6600; color: white; }
-    #voiceBtn   { background: #006633; color: white; }
-    #autoBtn    { background: #8e44ad; color: white; }
-    #remoteBtn  { background: #b30059; color: white; }
-    #listenBtn  { background: #00aa44; color: white; }
-    #stopBtn    { background: #cc0000; color: white; }
-    
-    .dpad { background: #334; color: #00d4ff; font-size: 20px; border: 2px solid #00d4ff; }
-    .dpad:active { background: #00d4ff; color: #1a1a2e; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MAVCS — Secure Vehicle Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   ROOT & RESET
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    .modeDisplay { font-size: 18px; font-weight: bold; padding: 12px; background: #16213e; border-radius: 10px; margin: 8px 0; }
-    #commandDisplay { font-size: 28px; font-weight: bold; color: #00ff88; padding: 15px; background: #16213e; border-radius: 10px; margin: 8px 0; min-height: 60px; }
-    .active-mode { border: 3px solid #00ff88; }
-    #debugDiv { font-size: 11px; color: #888; margin-top: 15px; }
-  </style>
+:root {
+  --bg:       #060a0f;
+  --surface:  #0c1219;
+  --card:     #101820;
+  --border:   #1c2d3f;
+  --border2:  #243547;
+  --accent:   #00e5ff;
+  --accent2:  #0077cc;
+  --green:    #00ff99;
+  --red:      #ff2244;
+  --orange:   #ff9900;
+  --yellow:   #ffe033;
+  --purple:   #bb55ff;
+  --text:     #ddeeff;
+  --dim:      #446688;
+  --dim2:     #223344;
+
+  --glow-b:  0 0 18px rgba(0,229,255,0.35);
+  --glow-g:  0 0 18px rgba(0,255,153,0.35);
+  --glow-r:  0 0 18px rgba(255,34,68,0.4);
+}
+
+html, body {
+  width: 100%; min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  overflow-x: hidden;
+}
+
+/* Scanline overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+/* Animated corner accent */
+body::before {
+  content: '';
+  position: fixed; top: 0; left: 0;
+  width: 200px; height: 200px;
+  background: radial-gradient(ellipse at top left, rgba(0,229,255,0.06), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════ */
+#app {
+  position: relative; z-index: 1;
+  max-width: 460px; margin: 0 auto;
+  padding: 0 16px 100px;
+  min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════ */
+header {
+  padding: 22px 0 0;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px; margin-bottom: 0;
+}
+
+.logo-block { display: flex; flex-direction: column; gap: 2px; }
+
+.logo {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 28px; letter-spacing: 4px;
+  color: var(--accent); text-shadow: var(--glow-b);
+  line-height: 1;
+}
+
+.logo-sub {
+  font-size: 9px; letter-spacing: 5px;
+  color: var(--dim); text-transform: uppercase;
+}
+
+.header-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+
+#sys-clock {
+  font-size: 13px; color: var(--accent); letter-spacing: 2px;
+  text-shadow: var(--glow-b);
+}
+
+#sys-status {
+  font-size: 9px; color: var(--dim); letter-spacing: 2px;
+}
+
+/* ═══════════════════════════════════════════════
+   BLE BAR
+═══════════════════════════════════════════════ */
+#ble-bar {
+  margin-top: 14px;
+  padding: 11px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.ble-left { display: flex; align-items: center; gap: 10px; }
+
+.ble-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--dim2); flex-shrink: 0;
+  transition: all 0.3s;
+}
+.ble-dot.on  { background: var(--green); box-shadow: var(--glow-g); }
+.ble-dot.blink { background: var(--orange); animation: blink 0.8s infinite; }
+
+#ble-text { font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+
+#btn-ble {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 13px; letter-spacing: 2px;
+  padding: 7px 18px; border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--accent2);
+  color: var(--accent); cursor: pointer;
+  transition: all 0.2s;
+}
+#btn-ble:hover  { background: rgba(0,229,255,0.08); }
+#btn-ble:active { transform: scale(0.96); }
+#btn-ble:disabled { opacity: 0.3; cursor: default; }
+
+/* ═══════════════════════════════════════════════
+   MODE GRID
+═══════════════════════════════════════════════ */
+#mode-grid {
+  margin-top: 18px;
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.mode-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mode-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--dim2);
+  transition: background 0.3s;
+}
+.mode-card:not(:disabled):hover { border-color: var(--border2); transform: translateY(-1px); }
+.mode-card.active::before { background: var(--accent); }
+.mode-card.active { border-color: var(--accent); background: rgba(0,229,255,0.04); }
+.mode-card:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+.mode-num {
+  font-size: 10px; color: var(--dim); letter-spacing: 2px;
+}
+.mode-icon-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mode-icon { font-size: 24px; }
+.mode-lock-icon { font-size: 14px; color: var(--dim); }
+.mode-lock-icon.unlocked { color: var(--green); }
+
+.mode-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 15px; letter-spacing: 2px;
+  color: var(--text);
+}
+.mode-desc { font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+
+/* ═══════════════════════════════════════════════
+   PIN OVERLAY
+═══════════════════════════════════════════════ */
+#pin-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(6,10,15,0.95);
+  backdrop-filter: blur(8px);
+  align-items: center; justify-content: center;
+  flex-direction: column;
+  animation: fadeIn 0.2s ease;
+}
+#pin-overlay.show { display: flex; }
+
+.pin-box {
+  width: 100%; max-width: 320px;
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 28px 24px;
+  position: relative;
+}
+
+.pin-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 18px; letter-spacing: 3px;
+  color: var(--accent); text-align: center;
+  margin-bottom: 4px;
+}
+.pin-subtitle {
+  font-size: 10px; color: var(--dim);
+  text-align: center; letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+
+/* PIN dots display */
+.pin-dots {
+  display: flex; justify-content: center; gap: 10px;
+  margin-bottom: 24px;
+}
+.pin-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border2);
+  transition: all 0.15s;
+}
+.pin-dot.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow-b);
+}
+.pin-dot.error {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: var(--glow-r);
+  animation: shake 0.3s ease;
+}
+
+/* Numpad */
+.numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.num-btn {
+  aspect-ratio: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 20px;
+  cursor: pointer;
+  transition: all 0.1s;
+  display: flex; align-items: center; justify-content: center;
+}
+.num-btn:active { background: rgba(0,229,255,0.12); border-color: var(--accent); transform: scale(0.94); }
+.num-btn.del { font-size: 18px; color: var(--dim); }
+.num-btn.del:active { color: var(--red); border-color: var(--red); }
+.num-btn.cancel-btn { color: var(--dim); font-size: 13px; letter-spacing: 1px; }
+
+.pin-attempts {
+  text-align: center; margin-top: 14px;
+  font-size: 10px; color: var(--dim);
+  min-height: 16px;
+}
+.pin-attempts.warn { color: var(--orange); }
+.pin-attempts.lock { color: var(--red); }
+
+/* Lockout timer */
+#pin-lockout-bar {
+  display: none;
+  height: 3px; background: var(--dim2);
+  border-radius: 2px; margin-top: 10px; overflow: hidden;
+}
+#pin-lockout-fill {
+  height: 100%; background: var(--red);
+  width: 100%; transition: width 1s linear;
+}
+
+/* ═══════════════════════════════════════════════
+   ACTIVE MODE PANELS
+═══════════════════════════════════════════════ */
+#mode-panels { margin-top: 16px; }
+
+.panel { display: none; animation: slideUp 0.25s ease; }
+.panel.active { display: block; }
+
+@keyframes slideUp {
+  from { opacity:0; transform: translateY(10px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+/* Panel header */
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.panel-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 16px; letter-spacing: 3px;
+  color: var(--accent);
+}
+
+/* LOCK button */
+#btn-lock-mode {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 5px;
+  background: rgba(255,34,68,0.08);
+  border: 1px solid rgba(255,34,68,0.4);
+  color: var(--red); font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; cursor: pointer; letter-spacing: 1px;
+  transition: all 0.2s;
+}
+#btn-lock-mode:hover { background: rgba(255,34,68,0.15); }
+
+/* Inactivity bar */
+.inactivity-bar-wrap {
+  margin-bottom: 12px;
+}
+.inactivity-label {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--dim); margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.inactivity-bar {
+  height: 3px; background: var(--dim2); border-radius: 2px; overflow: hidden;
+}
+#inactivity-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--green);
+  width: 100%; transition: width 1s linear, background 0.5s;
+}
+#inactivity-fill.warn  { background: var(--orange); }
+#inactivity-fill.crit  { background: var(--red); }
+#inactivity-time { color: var(--text); }
+
+/* ═══════════════════════════════════════════════
+   MODE 1 — REMOTE DPAD
+═══════════════════════════════════════════════ */
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 80px);
+  grid-template-rows: repeat(3, 80px);
+  gap: 8px; justify-content: center;
+}
+.dpad-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text); font-size: 26px;
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.08s; touch-action: none;
+}
+.dpad-btn:active, .dpad-btn.held {
+  background: rgba(0,229,255,0.1);
+  border-color: var(--accent);
+  box-shadow: var(--glow-b);
+  transform: scale(0.93);
+}
+.dpad-stop {
+  background: rgba(255,34,68,0.06);
+  border-color: rgba(255,34,68,0.3);
+  color: var(--red); font-size: 20px;
+}
+.dpad-empty { visibility: hidden; }
+
+.remote-status {
+  margin-top: 12px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; font-size: 11px; color: var(--dim);
+  text-align: center; letter-spacing: 2px;
+  min-height: 38px; display: flex; align-items: center; justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════
+   MODE 2 — GESTURE
+═══════════════════════════════════════════════ */
+.gesture-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px; text-align: center;
+}
+.tilt-arena {
+  width: 130px; height: 130px; margin: 0 auto 16px;
+  border-radius: 50%; border: 1px solid var(--border2);
+  position: relative; background: var(--card);
+}
+.tilt-arena::before, .tilt-arena::after {
+  content: ''; position: absolute;
+  background: var(--border);
+}
+.tilt-arena::before { width: 100%; height: 1px; top: 50%; left: 0; }
+.tilt-arena::after  { width: 1px; height: 100%; left: 50%; top: 0; }
+.tilt-ball {
+  position: absolute; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: var(--glow-b);
+  transform: translate(-50%,-50%);
+  left: 50%; top: 50%; transition: left 0.1s, top 0.1s;
+}
+.tilt-vals {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.tval {
+  background: var(--card); border-radius: 6px; padding: 8px;
+}
+.tval .l { font-size: 9px; color: var(--dim); margin-bottom: 3px; letter-spacing: 1px; }
+.tval .v { font-family: 'Rajdhani', sans-serif; font-size: 20px; color: var(--accent); font-weight: 700; }
+
+/* ═══════════════════════════════════════════════
+   MODE 3 — VOICE
+═══════════════════════════════════════════════ */
+.voice-enroll-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 12px;
+}
+.enroll-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.enroll-state {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--dim2);
+}
+.enroll-state.ok { background: var(--green); box-shadow: var(--glow-g); }
+
+.enroll-btns { display: flex; gap: 8px; margin-top: 10px; }
+
+.sm-btn {
+  padding: 7px 12px; border-radius: 5px;
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--text); font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; cursor: pointer; letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.sm-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.voice-main {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 22px; text-align: center;
+}
+
+#btn-mic {
+  width: 76px; height: 76px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent2), rgba(0,229,255,0.6));
+  border: 2px solid var(--accent); color: #fff; font-size: 30px;
+  cursor: pointer; margin: 0 auto 14px; display: flex;
+  align-items: center; justify-content: center;
+  box-shadow: var(--glow-b); transition: all 0.2s;
+}
+#btn-mic.live {
+  background: var(--red); border-color: var(--red);
+  box-shadow: var(--glow-r); animation: micpulse 1s infinite;
+}
+#btn-mic:disabled { opacity: 0.3; cursor: not-allowed; animation: none; }
+
+@keyframes micpulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07)} }
+
+#v-transcript { font-size: 12px; color: var(--dim); margin-bottom: 6px; min-height: 18px; }
+#v-cmd {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 22px; letter-spacing: 3px; color: var(--green);
+  text-shadow: var(--glow-g); min-height: 30px;
+}
+
+.cmd-legend {
+  display: grid; grid-template-columns: repeat(3,1fr);
+  gap: 5px; margin-top: 14px;
+}
+.cmd-item {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 4px; text-align: center;
+}
+.cmd-item .w { color: var(--accent); font-size: 11px; display: block; margin-bottom: 1px; }
+.cmd-item .a { color: var(--dim); font-size: 9px; }
+
+/* ═══════════════════════════════════════════════
+   MODE 4 — AUTOPILOT
+═══════════════════════════════════════════════ */
+.sensor-row {
+  display: grid; grid-template-columns: repeat(3,1fr); gap: 8px;
+  margin-bottom: 10px;
+}
+.scard {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 8px; text-align: center;
+}
+.scard .sl { font-size: 9px; color: var(--dim); letter-spacing: 2px; margin-bottom: 4px; }
+.scard .sd {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 24px; color: var(--green); transition: color 0.3s;
+}
+.scard .sd.warn   { color: var(--orange); }
+.scard .sd.danger { color: var(--red); }
+.scard .su { font-size: 9px; color: var(--dim); }
+
+.ap-state {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+}
+.ap-ico { font-size: 26px; }
+.ap-act {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 15px; letter-spacing: 2px;
+}
+.ap-sub-txt { font-size: 10px; color: var(--dim); margin-top: 2px; }
+
+#btn-ap {
+  width: 100%; padding: 14px;
+  border-radius: 7px; font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 14px; letter-spacing: 3px;
+  border: 2px solid var(--green);
+  background: rgba(0,255,153,0.06); color: var(--green);
+  cursor: pointer; transition: all 0.2s;
+}
+#btn-ap.running {
+  border-color: var(--red); background: rgba(255,34,68,0.06); color: var(--red);
+}
+
+/* ═══════════════════════════════════════════════
+   ALERT TOAST
+═══════════════════════════════════════════════ */
+#toast {
+  display: none; position: fixed;
+  top: 16px; left: 50%; transform: translateX(-50%);
+  background: var(--red); color: #fff;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 13px; letter-spacing: 2px;
+  padding: 10px 22px; border-radius: 6px;
+  z-index: 1000; white-space: nowrap;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown { from{transform:translateX(-50%) translateY(-16px);opacity:0} to{transform:translateX(-50%) translateY(0);opacity:1} }
+
+/* Auto-lock warning overlay */
+#lock-warning {
+  display: none; position: fixed;
+  bottom: 90px; left: 50%; transform: translateX(-50%);
+  background: var(--orange); color: #000;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 12px; letter-spacing: 2px;
+  padding: 9px 20px; border-radius: 6px; z-index: 800;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════
+   MISC ANIMATIONS
+═══════════════════════════════════════════════ */
+@keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+@keyframes blink   { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes shake {
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-6px)}
+  40%{transform:translateX(6px)}
+  60%{transform:translateX(-4px)}
+  80%{transform:translateX(4px)}
+}
+</style>
 </head>
 <body>
+<div id="app">
 
-<h1>🚗 Smart Car Control</h1>
-<div class="status" id="statusDiv">Loading model...</div>
-<div id="commandDisplay">---</div>
-<div class="modeDisplay" id="modeDisplay">Mode: GESTURE 🤚</div>
+  <!-- HEADER -->
+  <header>
+    <div class="logo-block">
+      <div class="logo">MAVCS</div>
+      <div class="logo-sub">Multimodal Autonomous Vehicle Control</div>
+    </div>
+    <div class="header-right">
+      <div id="sys-clock">--:--:--</div>
+      <div id="sys-status">SYSTEM IDLE</div>
+    </div>
+  </header>
 
-<button class="btn" id="btBtn" onclick="connectBluetooth()">🔵 Connect Bluetooth</button>
-
-<div class="row">
-  <button class="btn" id="gestureBtn" onclick="setMode('gesture')" disabled>🤚 Gesture</button>
-  <button class="btn" id="voiceBtn"   onclick="setMode('voice')"   disabled>🎤 Voice</button>
-</div>
-<div class="row">
-  <button class="btn" id="autoBtn"    onclick="setMode('auto')"    disabled>🤖 Auto</button>
-  <button class="btn" id="remoteBtn"  onclick="setMode('remote')"  disabled>🎮 Remote</button>
-</div>
-
-<button class="btn" id="listenBtn" onclick="startListening()" style="display:none;" disabled>🎤 Start Listening</button>
-<button class="btn" id="stopBtn"   onclick="stopListening()"  style="display:none;" disabled>⏹ Stop Listening</button>
-
-<div id="remoteControls" style="display:none; margin-top: 20px;">
-  <button class="btn dpad" onpointerdown="sendRemote('FORWARD')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬆️ Forward</button>
-  <div class="row">
-    <button class="btn dpad" onpointerdown="sendRemote('LEFT')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬅️ Left</button>
-    <button class="btn dpad" onpointerdown="sendRemote('RIGHT')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">➡️ Right</button>
+  <!-- BLE BAR -->
+  <div id="ble-bar">
+    <div class="ble-left">
+      <div class="ble-dot" id="ble-dot"></div>
+      <div id="ble-text">NOT CONNECTED</div>
+    </div>
+    <button id="btn-ble" onclick="toggleBLE()">CONNECT</button>
   </div>
-  <button class="btn dpad" onpointerdown="sendRemote('BACKWARD')" onpointerup="sendRemote('STOP')" onpointerleave="sendRemote('STOP')">⬇️ Backward</button>
+
+  <!-- MODE GRID -->
+  <div id="mode-grid">
+    <div class="mode-card" id="mc-1" onclick="requestPin(1)">
+      <div class="mode-num">MODE 01</div>
+      <div class="mode-icon-row">
+        <div class="mode-icon">🕹️</div>
+        <div class="mode-lock-icon" id="lock-icon-1">🔒</div>
+      </div>
+      <div class="mode-name">REMOTE</div>
+      <div class="mode-desc">D-PAD CONTROL</div>
+    </div>
+    <div class="mode-card" id="mc-2" onclick="requestPin(2)">
+      <div class="mode-num">MODE 02</div>
+      <div class="mode-icon-row">
+        <div class="mode-icon">🤚</div>
+        <div class="mode-lock-icon" id="lock-icon-2">🔒</div>
+      </div>
+      <div class="mode-name">GESTURE</div>
+      <div class="mode-desc">MPU-6050 TILT</div>
+    </div>
+    <div class="mode-card" id="mc-3" onclick="requestPin(3)">
+      <div class="mode-num">MODE 03</div>
+      <div class="mode-icon-row">
+        <div class="mode-icon">🎙️</div>
+        <div class="mode-lock-icon" id="lock-icon-3">🔒</div>
+      </div>
+      <div class="mode-name">VOICE</div>
+      <div class="mode-desc">SPEAKER LOCK</div>
+    </div>
+    <div class="mode-card" id="mc-4" onclick="requestPin(4)">
+      <div class="mode-num">MODE 04</div>
+      <div class="mode-icon-row">
+        <div class="mode-icon">🤖</div>
+        <div class="mode-lock-icon" id="lock-icon-4">🔒</div>
+      </div>
+      <div class="mode-name">AUTOPILOT</div>
+      <div class="mode-desc">AUTONOMOUS NAV</div>
+    </div>
+  </div>
+
+  <!-- MODE PANELS -->
+  <div id="mode-panels">
+
+    <!-- SHARED PANEL HEADER (injected by JS) -->
+    <!-- Each panel below has its own content only -->
+
+    <!-- PANEL 1: REMOTE -->
+    <div class="panel" id="panel-1">
+      <div class="panel-header">
+        <div class="panel-title">// REMOTE CONTROL</div>
+        <button id="btn-lock-mode" onclick="lockMode()">🔒 LOCK</button>
+      </div>
+      <div class="inactivity-bar-wrap">
+        <div class="inactivity-label">
+          <span>AUTO-LOCK</span>
+          <span id="inactivity-time">60s</span>
+        </div>
+        <div class="inactivity-bar"><div id="inactivity-fill"></div></div>
+      </div>
+      <div id="dpad">
+        <div class="dpad-empty"></div>
+        <button class="dpad-btn" id="db-fwd">▲</button>
+        <div class="dpad-empty"></div>
+        <button class="dpad-btn" id="db-left">◀</button>
+        <button class="dpad-btn dpad-stop" id="db-stop">■</button>
+        <button class="dpad-btn" id="db-right">▶</button>
+        <div class="dpad-empty"></div>
+        <button class="dpad-btn" id="db-bwd">▼</button>
+        <div class="dpad-empty"></div>
+      </div>
+      <div class="remote-status" id="remote-status">HOLD BUTTONS TO DRIVE</div>
+    </div>
+
+    <!-- PANEL 2: GESTURE -->
+    <div class="panel" id="panel-2">
+      <div class="panel-header">
+        <div class="panel-title">// GESTURE CONTROL</div>
+        <button id="btn-lock-mode-2" class="btn-lock-mode-cls" onclick="lockMode()">🔒 LOCK</button>
+      </div>
+      <div class="inactivity-bar-wrap">
+        <div class="inactivity-label">
+          <span>AUTO-LOCK</span>
+          <span class="inactivity-time-cls">60s</span>
+        </div>
+        <div class="inactivity-bar"><div class="inactivity-fill-cls" id="inactivity-fill-2"></div></div>
+      </div>
+      <div class="gesture-card">
+        <div class="tilt-arena">
+          <div class="tilt-ball" id="tilt-ball"></div>
+        </div>
+        <div class="tilt-vals">
+          <div class="tval"><div class="l">PITCH</div><div class="v" id="pval">0.0°</div></div>
+          <div class="tval"><div class="l">ROLL</div><div class="v" id="rval">0.0°</div></div>
+        </div>
+      </div>
+      <div class="remote-status" style="margin-top:10px" id="gesture-status">TILT HANDHELD UNIT TO DRIVE</div>
+    </div>
+
+    <!-- PANEL 3: VOICE -->
+    <div class="panel" id="panel-3">
+      <div class="panel-header">
+        <div class="panel-title">// VOICE CONTROL</div>
+        <button class="btn-lock-mode-cls" onclick="lockMode()">🔒 LOCK</button>
+      </div>
+      <div class="inactivity-bar-wrap">
+        <div class="inactivity-label">
+          <span>AUTO-LOCK</span>
+          <span class="inactivity-time-cls">60s</span>
+        </div>
+        <div class="inactivity-bar"><div class="inactivity-fill-cls" id="inactivity-fill-3"></div></div>
+      </div>
+      <div class="voice-enroll-card">
+        <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:10px">SPEAKER ENROLLMENT — REQUIRED BEFORE USE</div>
+        <div class="enroll-row">
+          <span style="font-size:11px">Voice Profile</span>
+          <div class="enroll-state" id="enroll-dot"></div>
+        </div>
+        <div class="enroll-btns">
+          <button class="sm-btn" onclick="startEnroll()">ENROLL VOICE</button>
+          <button class="sm-btn" onclick="clearEnroll()">CLEAR</button>
+        </div>
+        <div id="enroll-msg" style="margin-top:8px;font-size:10px;color:var(--dim)">Say: "FORWARD BACKWARD LEFT RIGHT STOP"</div>
+      </div>
+      <div class="voice-main">
+        <button id="btn-mic" onclick="toggleMic()" disabled>🎙️</button>
+        <div id="v-transcript">—</div>
+        <div id="v-cmd">WAITING...</div>
+        <div class="cmd-legend">
+          <div class="cmd-item"><span class="w">GO/FORWARD</span><span class="a">↑ Forward</span></div>
+          <div class="cmd-item"><span class="w">BACK</span><span class="a">↓ Reverse</span></div>
+          <div class="cmd-item"><span class="w">LEFT</span><span class="a">← Turn</span></div>
+          <div class="cmd-item"><span class="w">RIGHT</span><span class="a">→ Turn</span></div>
+          <div class="cmd-item"><span class="w">STOP/HALT</span><span class="a">■ Stop</span></div>
+          <div class="cmd-item"><span class="w">FASTER</span><span class="a">⚡ Speed</span></div>
+        </div>
+      </div>
+      <div class="remote-status" style="margin-top:10px" id="voice-obs-status">OBSTACLE DETECTION ACTIVE</div>
+    </div>
+
+    <!-- PANEL 4: AUTOPILOT -->
+    <div class="panel" id="panel-4">
+      <div class="panel-header">
+        <div class="panel-title">// AUTOPILOT</div>
+        <button class="btn-lock-mode-cls" onclick="lockMode()">🔒 LOCK</button>
+      </div>
+      <div class="inactivity-bar-wrap">
+        <div class="inactivity-label">
+          <span>AUTO-LOCK</span>
+          <span class="inactivity-time-cls">60s</span>
+        </div>
+        <div class="inactivity-bar"><div class="inactivity-fill-cls" id="inactivity-fill-4"></div></div>
+      </div>
+      <div class="sensor-row">
+        <div class="scard"><div class="sl">LEFT</div><div class="sd" id="sd-l">—</div><div class="su">cm</div></div>
+        <div class="scard"><div class="sl">FRONT</div><div class="sd" id="sd-f">—</div><div class="su">cm</div></div>
+        <div class="scard"><div class="sl">RIGHT</div><div class="sd" id="sd-r">—</div><div class="su">cm</div></div>
+      </div>
+      <div class="ap-state">
+        <div class="ap-ico" id="ap-ico">⏸️</div>
+        <div>
+          <div class="ap-act" id="ap-act">STANDBY</div>
+          <div class="ap-sub-txt" id="ap-sub">Press START to begin</div>
+        </div>
+      </div>
+      <div style="padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:10px;color:var(--dim);line-height:2">
+        <span style="color:var(--accent);font-family:'Rajdhani',sans-serif;letter-spacing:2px;font-weight:700">LOGIC ──</span><br>
+        🟢 Default: FORWARD &nbsp;|&nbsp; 🔴 Front &lt;30cm: STOP→SCAN→TURN<br>
+        🟡 Side &lt;15cm: STEER AWAY &nbsp;|&nbsp; 🔊 Buzzer ON while avoiding
+      </div>
+      <button id="btn-ap" onclick="toggleAP()">▶ START AUTOPILOT</button>
+    </div>
+
+  </div>
 </div>
 
-<div id="debugDiv"></div>
+<!-- PIN OVERLAY -->
+<div id="pin-overlay">
+  <div class="pin-box">
+    <div class="pin-title" id="pin-title">ENTER PIN</div>
+    <div class="pin-subtitle" id="pin-subtitle">MODE 01 — REMOTE CONTROL</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+      <div class="pin-dot" id="pd4"></div>
+      <div class="pin-dot" id="pd5"></div>
+    </div>
+    <div class="numpad">
+      <button class="num-btn" onclick="pinKey('1')">1</button>
+      <button class="num-btn" onclick="pinKey('2')">2</button>
+      <button class="num-btn" onclick="pinKey('3')">3</button>
+      <button class="num-btn" onclick="pinKey('4')">4</button>
+      <button class="num-btn" onclick="pinKey('5')">5</button>
+      <button class="num-btn" onclick="pinKey('6')">6</button>
+      <button class="num-btn" onclick="pinKey('7')">7</button>
+      <button class="num-btn" onclick="pinKey('8')">8</button>
+      <button class="num-btn" onclick="pinKey('9')">9</button>
+      <button class="num-btn cancel-btn" onclick="closePin()">CANCEL</button>
+      <button class="num-btn" onclick="pinKey('0')">0</button>
+      <button class="num-btn del" onclick="pinDel()">⌫</button>
+    </div>
+    <div class="pin-attempts" id="pin-attempts"></div>
+    <div id="pin-lockout-bar"><div id="pin-lockout-fill"></div></div>
+  </div>
+</div>
+
+<!-- TOAST & LOCK WARNING -->
+<div id="toast"></div>
+<div id="lock-warning">⚠ AUTO-LOCKING IN 10 SECONDS</div>
 
 <script>
-const MODEL_URL = "https://teachablemachine.withgoogle.com/models/vWCoKIgKY/";
-const THRESHOLD = 0.85;
+// ════════════════════════════════════════════════════════════
+//  PIN CONFIGURATION — CHANGE THESE FOR YOUR PROJECT
+// ════════════════════════════════════════════════════════════
+const PINS = {
+  1: '112233',  // Mode 1: Remote
+  2: '445566',  // Mode 2: Gesture
+  3: '778899',  // Mode 3: Voice
+  4: '998877'   // Mode 4: Autopilot
+};
+const MODE_NAMES = {
+  1: 'REMOTE CONTROL',
+  2: 'GESTURE CONTROL',
+  3: 'VOICE CONTROL',
+  4: 'AUTOPILOT'
+};
 
-let recognizer, btCharacteristic;
-let isListening = false;
-let currentMode = "gesture";
-let lastCommand = "";
-let lastCommandTime = 0;
+const MAX_ATTEMPTS    = 3;
+const LOCKOUT_SECS    = 30;
+const INACTIVITY_SECS = 60;
+const WARN_SECS       = 10; // warn before auto-lock
 
-// RESTORED BLUETOOTH IDs
-const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+// ════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════
+let bleDevice = null, bleChar = null, connected = false;
+let currentMode = 0;
+let pinTarget = 0, pinBuffer = '';
+let pinAttempts = 0, pinLocked = false, lockoutTimer = null;
+let inactivityTimer = null, inactivityRemaining = INACTIVITY_SECS;
+let inactivityInterval = null;
+let apRunning = false;
+let voiceEnrolled = false, voiceFeatures = null, enrollSamples = [];
+let recognition = null, micLive = false;
+let audioCtx = null;
 
-function log(msg) { document.getElementById("debugDiv").innerText = msg; }
+// ════════════════════════════════════════════════════════════
+//  CLOCK
+// ════════════════════════════════════════════════════════════
+setInterval(() => {
+  const now = new Date();
+  document.getElementById('sys-clock').textContent =
+    now.toTimeString().slice(0,8);
+}, 1000);
 
-function loadScript(url) {
-  return new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = rej; document.head.appendChild(s);
-  });
-}
+// ════════════════════════════════════════════════════════════
+//  BLE
+// ════════════════════════════════════════════════════════════
+const SVC_UUID  = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+const CHAR_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 
-async function init() {
+async function toggleBLE() {
+  if (connected) { bleDevice?.gatt.disconnect(); return; }
+  setBLE('connecting');
   try {
-    document.getElementById("statusDiv").innerText = "Loading TensorFlow...";
-    await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js");
-    await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js");
-    document.getElementById("statusDiv").innerText = "Loading voice model...";
-    recognizer = speechCommands.create("BROWSER_FFT", undefined, MODEL_URL + "model.json", MODEL_URL + "metadata.json");
-    await recognizer.ensureModelLoaded();
-    document.getElementById("statusDiv").innerText = "✅ Model ready! Connect Bluetooth.";
-  } catch(e) { document.getElementById("statusDiv").innerText = "❌ Load failed: " + e.message; }
-}
-
-async function connectBluetooth() {
-  try {
-    document.getElementById("statusDiv").innerText = "Connecting...";
-    const device = await navigator.bluetooth.requestDevice({ filters: [{ name: "HybridCar_Hand" }], optionalServices: [SERVICE_UUID] });
-    const server  = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    btCharacteristic = await service.getCharacteristic(CHAR_UUID);
-
-    document.getElementById("statusDiv").innerText = "✅ Bluetooth Connected!";
-    document.getElementById("btBtn").innerText = "✅ Connected";
-    ["gestureBtn", "voiceBtn", "autoBtn", "remoteBtn"].forEach(id => document.getElementById(id).disabled = false);
-    updateModeDisplay();
-    await sendRaw("MODE:1");
-  } catch(e) { document.getElementById("statusDiv").innerText = "❌ BT Error: " + e.message; }
-}
-
-async function sendRaw(data) {
-  try { if (btCharacteristic) await btCharacteristic.writeValue(new TextEncoder().encode(data)); log("Sent: " + data); } 
-  catch(e) { log("Send error: " + e.message); }
-}
-
-function sendRemote(cmd) {
-  if (currentMode !== "remote") return;
-  document.getElementById("commandDisplay").innerText = "🎮 " + cmd;
-  sendRaw("CMD:" + cmd);
-}
-
-async function setMode(mode) {
-  currentMode = mode;
-  updateModeDisplay();
-  
-  let modeCode = "MODE:1";
-  if(mode === "voice") modeCode = "MODE:2";
-  if(mode === "auto") modeCode = "MODE:3";
-  if(mode === "remote") modeCode = "MODE:4";
-  
-  await sendRaw(modeCode);
-  if (mode !== "voice" && isListening) stopListening();
-}
-
-function updateModeDisplay() {
-  const d = document.getElementById("modeDisplay");
-  ["gestureBtn", "voiceBtn", "autoBtn", "remoteBtn"].forEach(id => document.getElementById(id).classList.remove("active-mode"));
-
-  document.getElementById("listenBtn").style.display = "none";
-  document.getElementById("stopBtn").style.display   = "none";
-  document.getElementById("remoteControls").style.display = "none";
-
-  if (currentMode === "gesture") {
-    d.innerText = "Mode: GESTURE 🤚"; d.style.color = "#ffaa44";
-    document.getElementById("gestureBtn").classList.add("active-mode");
-  } else if (currentMode === "auto") {
-    d.innerText = "Mode: AUTO PILOT 🤖"; d.style.color = "#8e44ad";
-    document.getElementById("autoBtn").classList.add("active-mode");
-  } else if (currentMode === "remote") {
-    d.innerText = "Mode: REMOTE 🎮"; d.style.color = "#b30059";
-    document.getElementById("remoteBtn").classList.add("active-mode");
-    document.getElementById("remoteControls").style.display = "block";
-  } else {
-    d.innerText = "Mode: VOICE 🎤"; d.style.color = "#00ff88";
-    document.getElementById("voiceBtn").classList.add("active-mode");
-    document.getElementById("listenBtn").style.display = "block";
-    document.getElementById("stopBtn").style.display   = "block";
-    document.getElementById("listenBtn").disabled = false;
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{name: 'MAVCS_CAR'}], optionalServices: [SVC_UUID]
+    });
+    bleDevice.addEventListener('gattserverdisconnected', () => {
+      setBLE('off'); lockMode(true);
+      document.getElementById('sys-status').textContent = 'DISCONNECTED';
+    });
+    const srv  = await bleDevice.gatt.connect();
+    const svc  = await srv.getPrimaryService(SVC_UUID);
+    bleChar    = await svc.getCharacteristic(CHAR_UUID);
+    await bleChar.startNotifications();
+    bleChar.addEventListener('characteristicvaluechanged', onCarMsg);
+    setBLE('on');
+    document.getElementById('sys-status').textContent = 'BLE CONNECTED';
+    enableModeCards();
+  } catch(e) {
+    setBLE('off');
+    console.error(e);
   }
 }
 
-async function startListening() {
-  if (!recognizer || isListening || currentMode !== "voice") return;
-  isListening = true;
-  document.getElementById("listenBtn").disabled = true; document.getElementById("stopBtn").disabled = false;
-  document.getElementById("statusDiv").innerText = "🎤 Listening...";
+function setBLE(state) {
+  const dot = document.getElementById('ble-dot');
+  const txt = document.getElementById('ble-text');
+  const btn = document.getElementById('btn-ble');
+  dot.className = 'ble-dot' + (state==='on'?' on':state==='connecting'?' blink':'');
+  txt.textContent = state==='on' ? 'MAVCS_CAR — CONNECTED' : state==='connecting' ? 'CONNECTING...' : 'NOT CONNECTED';
+  btn.textContent = state==='on' ? 'DISCONNECT' : 'CONNECT';
+  connected = state==='on';
+}
 
-  await recognizer.listen(result => {
-    const labels = recognizer.wordLabels();
-    const scores = result.scores;
-    let maxScore = 0, maxLabel = "";
-    labels.forEach((label, i) => { if (scores[i] > maxScore) { maxScore = scores[i]; maxLabel = label; } });
+async function sendBLE(cmd) {
+  if (!bleChar) return;
+  try { await bleChar.writeValue(new TextEncoder().encode(cmd)); }
+  catch(e) { console.warn(e); }
+}
 
-    const lower = maxLabel.toLowerCase();
-    if (maxScore >= THRESHOLD && lower !== "background noise" && lower !== "others" && lower !== "_background_noise_") {
-      const now = Date.now();
-      if (lower !== lastCommand || now - lastCommandTime > 1500) {
-        lastCommand = lower; lastCommandTime = now;
-        document.getElementById("commandDisplay").innerText = "▶ " + lower.toUpperCase();
-        sendRaw("CMD:" + lower.toUpperCase());
+function onCarMsg(e) {
+  const msg = new TextDecoder().decode(e.target.value);
+  resetInactivity();
+  if (msg.startsWith('OBS:FRONT:')) {
+    const d = msg.split(':')[2];
+    showToast('⚠ OBSTACLE ' + d + 'cm — STOPPED');
+    updateSensor('sd-f', parseInt(d));
+    if (currentMode === 3) {
+      document.getElementById('voice-obs-status').textContent = '⚠ OBSTACLE DETECTED — AUTO STOPPED';
+      document.getElementById('voice-obs-status').style.color = 'var(--red)';
+    }
+  }
+  if (msg.startsWith('OBS:L')) {
+    const p = msg.split(':');
+    const l = parseInt(p[1].replace('L',''));
+    const r = parseInt(p[2].replace('R',''));
+    updateSensor('sd-l', l); updateSensor('sd-r', r);
+    setAP(l>r?'↰':'↱', l>r?'TURNING LEFT':'TURNING RIGHT',
+          l>r?'More space on left':'More space on right');
+  }
+  if (msg.startsWith('OBS:SIDE:')) {
+    const p = msg.split(':');
+    const side = p[2], d = parseInt(p[3]);
+    if (side==='L') { updateSensor('sd-l',d); setAP('↱','STEER RIGHT','Left obstacle '+d+'cm'); }
+    else            { updateSensor('sd-r',d); setAP('↰','STEER LEFT','Right obstacle '+d+'cm'); }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODE CARDS
+// ════════════════════════════════════════════════════════════
+function enableModeCards() {
+  [1,2,3,4].forEach(i => {
+    const c = document.getElementById('mc-'+i);
+    c.style.opacity = '';
+    c.style.cursor  = 'pointer';
+  });
+}
+
+function disableModeCards() {
+  [1,2,3,4].forEach(i => {
+    const c = document.getElementById('mc-'+i);
+    c.style.opacity = '0.35';
+    c.style.cursor  = 'not-allowed';
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  PIN SYSTEM
+// ════════════════════════════════════════════════════════════
+function requestPin(mode) {
+  if (!connected) { showToast('Connect BLE first'); return; }
+  if (pinLocked)  { showToast('PIN locked — wait ' + LOCKOUT_SECS + 's'); return; }
+  pinTarget = mode;
+  pinBuffer = '';
+  renderDots();
+  document.getElementById('pin-title').textContent    = 'ENTER PIN';
+  document.getElementById('pin-subtitle').textContent = 'MODE 0' + mode + ' — ' + MODE_NAMES[mode];
+  document.getElementById('pin-attempts').textContent = '';
+  document.getElementById('pin-attempts').className   = 'pin-attempts';
+  document.getElementById('pin-lockout-bar').style.display = 'none';
+  document.getElementById('pin-overlay').classList.add('show');
+}
+
+function pinKey(k) {
+  if (pinBuffer.length >= 6) return;
+  pinBuffer += k;
+  renderDots();
+  if (pinBuffer.length === 6) setTimeout(checkPin, 120);
+}
+
+function pinDel() {
+  pinBuffer = pinBuffer.slice(0,-1);
+  renderDots();
+}
+
+function renderDots() {
+  for (let i = 0; i < 6; i++) {
+    const d = document.getElementById('pd'+i);
+    d.className = 'pin-dot' + (i < pinBuffer.length ? ' filled' : '');
+  }
+}
+
+function checkPin() {
+  if (pinBuffer === PINS[pinTarget]) {
+    // Correct
+    pinAttempts = 0;
+    closePin();
+    activateMode(pinTarget);
+  } else {
+    // Wrong
+    pinAttempts++;
+    for (let i = 0; i < 6; i++) {
+      document.getElementById('pd'+i).className = 'pin-dot error';
+    }
+    setTimeout(() => { pinBuffer = ''; renderDots(); }, 400);
+
+    const remaining = MAX_ATTEMPTS - pinAttempts;
+    const attEl = document.getElementById('pin-attempts');
+
+    if (pinAttempts >= MAX_ATTEMPTS) {
+      // Lockout
+      pinLocked = true;
+      attEl.textContent = 'LOCKED — WAIT ' + LOCKOUT_SECS + 's';
+      attEl.className   = 'pin-attempts lock';
+      startLockoutBar();
+      closePin();
+      showToast('TOO MANY ATTEMPTS — LOCKED 30s');
+    } else {
+      attEl.textContent = 'WRONG PIN — ' + remaining + ' ATTEMPT' + (remaining>1?'S':'') + ' LEFT';
+      attEl.className   = 'pin-attempts warn';
+    }
+  }
+}
+
+function startLockoutBar() {
+  const bar  = document.getElementById('pin-lockout-fill');
+  const wrap = document.getElementById('pin-lockout-bar');
+  wrap.style.display = 'block';
+  bar.style.width = '100%';
+  let t = LOCKOUT_SECS;
+  const iv = setInterval(() => {
+    t--;
+    bar.style.width = (t / LOCKOUT_SECS * 100) + '%';
+    if (t <= 0) {
+      clearInterval(iv);
+      pinLocked    = false;
+      pinAttempts  = 0;
+      wrap.style.display = 'none';
+    }
+  }, 1000);
+}
+
+function closePin() {
+  document.getElementById('pin-overlay').classList.remove('show');
+  pinBuffer = '';
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODE ACTIVATION & LOCKING
+// ════════════════════════════════════════════════════════════
+async function activateMode(m) {
+  // Deactivate previous
+  if (currentMode > 0) {
+    document.getElementById('panel-'+currentMode).classList.remove('active');
+    document.getElementById('mc-'+currentMode).classList.remove('active');
+    document.getElementById('lock-icon-'+currentMode).textContent = '🔒';
+    document.getElementById('lock-icon-'+currentMode).classList.remove('unlocked');
+  }
+  currentMode = m;
+  document.getElementById('panel-'+m).classList.add('active');
+  document.getElementById('mc-'+m).classList.add('active');
+  document.getElementById('lock-icon-'+m).textContent = '🔓';
+  document.getElementById('lock-icon-'+m).classList.add('unlocked');
+  document.getElementById('sys-status').textContent = 'MODE ' + m + ' ACTIVE';
+  await sendBLE('MODE:' + m);
+  startInactivityTimer();
+  if (m === 2) activateGestureSensor();
+}
+
+async function lockMode(silent = false) {
+  if (currentMode === 0) return;
+  stopMic();
+  if (apRunning) { apRunning = false; sendBLE('S'); }
+  if (!silent) await sendBLE('LOCK');
+  stopInactivityTimer();
+
+  document.getElementById('panel-'+currentMode).classList.remove('active');
+  document.getElementById('mc-'+currentMode).classList.remove('active');
+  document.getElementById('lock-icon-'+currentMode).textContent = '🔒';
+  document.getElementById('lock-icon-'+currentMode).classList.remove('unlocked');
+  document.getElementById('sys-status').textContent = 'LOCKED';
+  document.getElementById('lock-warning').style.display = 'none';
+  currentMode = 0;
+}
+
+// ════════════════════════════════════════════════════════════
+//  INACTIVITY TIMER
+// ════════════════════════════════════════════════════════════
+function resetInactivity() {
+  inactivityRemaining = INACTIVITY_SECS;
+  updateInactivityBars(100);
+  document.getElementById('lock-warning').style.display = 'none';
+}
+
+function startInactivityTimer() {
+  stopInactivityTimer();
+  inactivityRemaining = INACTIVITY_SECS;
+  updateInactivityBars(100);
+
+  inactivityInterval = setInterval(() => {
+    inactivityRemaining--;
+    const pct = (inactivityRemaining / INACTIVITY_SECS) * 100;
+    updateInactivityBars(pct);
+
+    // Warn at WARN_SECS seconds left
+    if (inactivityRemaining === WARN_SECS) {
+      document.getElementById('lock-warning').style.display = 'block';
+      sendBLE('WARN_LOCK'); // triggers buzzer on car
+    }
+
+    if (inactivityRemaining <= 0) {
+      document.getElementById('lock-warning').style.display = 'none';
+      lockMode();
+      showToast('AUTO-LOCKED — INACTIVITY');
+    }
+  }, 1000);
+}
+
+function stopInactivityTimer() {
+  if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
+}
+
+function updateInactivityBars(pct) {
+  const fills = document.querySelectorAll('#inactivity-fill, .inactivity-fill-cls');
+  const times = document.querySelectorAll('#inactivity-time,  .inactivity-time-cls');
+  const cls = pct > 40 ? '' : pct > 15 ? ' warn' : ' crit';
+  fills.forEach(f => { f.style.width = pct + '%'; f.className = cls.trim() ? cls.trim() : ''; });
+  times.forEach(t => t.textContent = inactivityRemaining + 's');
+}
+
+// Touch/click resets inactivity
+document.addEventListener('touchstart', resetInactivity, {passive:true});
+document.addEventListener('mousedown', resetInactivity);
+document.addEventListener('keydown', resetInactivity);
+
+// ════════════════════════════════════════════════════════════
+//  MODE 1 — REMOTE D-PAD
+// ════════════════════════════════════════════════════════════
+const dpadMap = {
+  'db-fwd':'F', 'db-bwd':'B', 'db-left':'L', 'db-right':'R'
+};
+const cmdLabel = {F:'FORWARD',B:'BACKWARD',L:'LEFT',R:'RIGHT',S:'STOP'};
+
+Object.entries(dpadMap).forEach(([id, cmd]) => {
+  const el = document.getElementById(id);
+  const dn = () => { el.classList.add('held'); sendBLE(cmd); document.getElementById('remote-status').textContent = cmdLabel[cmd]; resetInactivity(); };
+  const up = () => { el.classList.remove('held'); sendBLE('S'); document.getElementById('remote-status').textContent = 'HOLD BUTTONS TO DRIVE'; };
+  el.addEventListener('mousedown', dn);
+  el.addEventListener('touchstart', e => { e.preventDefault(); dn(); }, {passive:false});
+  el.addEventListener('mouseup', up); el.addEventListener('mouseleave', up);
+  el.addEventListener('touchend', up); el.addEventListener('touchcancel', up);
+});
+
+document.getElementById('db-stop').addEventListener('click', () => {
+  sendBLE('S'); document.getElementById('remote-status').textContent = 'STOP'; resetInactivity();
+});
+
+// ════════════════════════════════════════════════════════════
+//  MODE 2 — GESTURE DISPLAY
+// ════════════════════════════════════════════════════════════
+function activateGestureSensor() {
+  if (!window.DeviceOrientationEvent) return;
+  const go = () => window.addEventListener('deviceorientation', onOrient);
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(r => { if(r==='granted') go(); });
+  } else { go(); }
+}
+
+function onOrient(e) {
+  if (currentMode !== 2) return;
+  const p = e.beta || 0, r = e.gamma || 0;
+  document.getElementById('pval').textContent = p.toFixed(1)+'°';
+  document.getElementById('rval').textContent = r.toFixed(1)+'°';
+  const x = 50 + Math.max(-45,Math.min(45,r))/45*42;
+  const y = 50 - Math.max(-45,Math.min(45,p))/45*42;
+  const b = document.getElementById('tilt-ball');
+  b.style.left = x+'%'; b.style.top = y+'%';
+  let dir = 'LEVEL';
+  if(p>20)dir='▲ FORWARD'; else if(p<-20)dir='▼ BACKWARD';
+  else if(r<-20)dir='◀ LEFT'; else if(r>20)dir='▶ RIGHT';
+  document.getElementById('gesture-status').textContent = 'GESTURE: '+dir;
+  resetInactivity();
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODE 3 — VOICE + SPEAKER LOCK
+// ════════════════════════════════════════════════════════════
+async function getFeatures(stream, ms=1800) {
+  return new Promise(res => {
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(stream);
+    const an  = audioCtx.createAnalyser(); an.fftSize = 256;
+    src.connect(an);
+    const frames = []; const iv = setInterval(() => {
+      const a = new Float32Array(an.frequencyBinCount);
+      an.getFloatFrequencyData(a); frames.push([...a]);
+    }, 50);
+    setTimeout(() => {
+      clearInterval(iv); src.disconnect();
+      if (!frames.length) { res(null); return; }
+      res(frames[0].map((_,i) => frames.reduce((s,f)=>s+f[i],0)/frames.length));
+    }, ms);
+  });
+}
+
+function cosine(a,b) {
+  if(!a||!b||a.length!==b.length) return 0;
+  let d=0,ma=0,mb=0;
+  for(let i=0;i<a.length;i++){d+=a[i]*b[i];ma+=a[i]*a[i];mb+=b[i]*b[i];}
+  return d/(Math.sqrt(ma)*Math.sqrt(mb));
+}
+
+async function startEnroll() {
+  const btn = document.querySelector('[onclick="startEnroll()"]');
+  btn.textContent = 'RECORDING...'; btn.disabled = true;
+  document.getElementById('enroll-msg').textContent = 'Speak now — "forward backward left right stop"';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    const f = await getFeatures(stream, 2000);
+    stream.getTracks().forEach(t=>t.stop());
+    if (f) {
+      enrollSamples.push(f);
+      voiceFeatures = enrollSamples[0].map((_,i)=>enrollSamples.reduce((s,x)=>s+x[i],0)/enrollSamples.length);
+      voiceEnrolled = true;
+      document.getElementById('enroll-dot').classList.add('ok');
+      document.getElementById('enroll-msg').textContent = '✓ Enrolled ('+enrollSamples.length+' sample'+(enrollSamples.length>1?'s':'')+') — enroll again to improve';
+      document.getElementById('btn-mic').disabled = false;
+    }
+  } catch(e) {
+    document.getElementById('enroll-msg').textContent = 'Mic denied — allow permission';
+  }
+  btn.textContent = 'ENROLL AGAIN'; btn.disabled = false;
+}
+
+function clearEnroll() {
+  voiceEnrolled=false; voiceFeatures=null; enrollSamples=[];
+  document.getElementById('enroll-dot').classList.remove('ok');
+  document.getElementById('enroll-msg').textContent = 'Say: "FORWARD BACKWARD LEFT RIGHT STOP"';
+  document.querySelector('[onclick="startEnroll()"]').textContent = 'ENROLL VOICE';
+  document.getElementById('btn-mic').disabled = true;
+}
+
+const voiceCmds = {
+  'forward':'F','go':'F','move':'F',
+  'backward':'B','back':'B','reverse':'B',
+  'left':'L','right':'R',
+  'stop':'S','halt':'S','pause':'S'
+};
+
+async function toggleMic() {
+  if (micLive) { stopMic(); return; }
+  if (!voiceEnrolled) { showToast('ENROLL VOICE FIRST'); return; }
+
+  // Speaker verification
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({audio:true});
+    document.getElementById('v-transcript').textContent = 'Verifying speaker...';
+    const cf = await getFeatures(s, 1000);
+    s.getTracks().forEach(t=>t.stop());
+    const sim = cosine(voiceFeatures, cf);
+    if (sim < 0.75) {
+      document.getElementById('v-transcript').textContent = '❌ Voice not recognised';
+      document.getElementById('v-cmd').textContent = 'ACCESS DENIED';
+      showToast('UNAUTHORIZED SPEAKER');
+      return;
+    }
+  } catch(e) {}
+
+  startMic();
+}
+
+function startMic() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    showToast('USE CHROME ON ANDROID'); return;
+  }
+  micLive = true;
+  document.getElementById('btn-mic').classList.add('live');
+  document.getElementById('btn-mic').textContent = '🔴';
+
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = e => {
+    const r = e.results[e.results.length-1];
+    const t = r[0].transcript.toLowerCase().trim();
+    document.getElementById('v-transcript').textContent = '› '+t;
+    if (r.isFinal) {
+      let cmd = null;
+      for (const [w,c] of Object.entries(voiceCmds)) {
+        if (t.includes(w)) { cmd=c; break; }
+      }
+      if (cmd) {
+        document.getElementById('v-cmd').textContent = cmdLabel[cmd];
+        sendBLE(cmd); resetInactivity();
+        clearTimeout(window._vstop);
+        if (cmd!=='S') window._vstop = setTimeout(()=>sendBLE('S'),1500);
       }
     }
-  }, { overlapFactor: 0.75, probabilityThreshold: 0.5 });
+  };
+  recognition.onerror = e => { if(e.error!=='aborted') document.getElementById('v-transcript').textContent='Error: '+e.error; };
+  recognition.onend   = () => { if(micLive) recognition.start(); };
+  recognition.start();
+  document.getElementById('v-transcript').textContent = 'Listening...';
 }
 
-function stopListening() {
-  if (recognizer && isListening) recognizer.stopListening();
-  isListening = false;
-  document.getElementById("listenBtn").disabled = false; document.getElementById("stopBtn").disabled = true;
-  document.getElementById("statusDiv").innerText = "⏹ Stopped";
-  document.getElementById("commandDisplay").innerText = "---";
+function stopMic() {
+  micLive = false;
+  recognition?.abort(); recognition = null;
+  document.getElementById('btn-mic')?.classList.remove('live');
+  if(document.getElementById('btn-mic')) document.getElementById('btn-mic').textContent='🎙️';
+  document.getElementById('v-transcript').textContent = '—';
+  document.getElementById('v-cmd').textContent = 'WAITING...';
+  sendBLE('S');
 }
 
-window.onload = init;
+// ════════════════════════════════════════════════════════════
+//  MODE 4 — AUTOPILOT
+// ════════════════════════════════════════════════════════════
+function toggleAP() {
+  apRunning = !apRunning;
+  const btn = document.getElementById('btn-ap');
+  if (apRunning) {
+    btn.textContent = '■ STOP AUTOPILOT'; btn.classList.add('running');
+    setAP('🚀','RUNNING','Autonomous navigation active');
+    resetInactivity();
+  } else {
+    btn.textContent = '▶ START AUTOPILOT'; btn.classList.remove('running');
+    setAP('⏸️','STANDBY','Press START to begin');
+    sendBLE('S');
+  }
+}
+
+function setAP(ico,act,sub) {
+  document.getElementById('ap-ico').textContent = ico;
+  document.getElementById('ap-act').textContent = act;
+  document.getElementById('ap-sub').textContent = sub;
+}
+
+function updateSensor(id,v) {
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = v;
+  el.className = 'sd'+(v<15?' danger':v<30?' warn':'');
+}
+
+// ════════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════════
+let toastTimer;
+function showToast(msg, ms=3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.style.display='none', ms);
+}
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+// Disable mode cards until BLE connected
+disableModeCards();
+if (!navigator.bluetooth) {
+  document.getElementById('btn-ble').disabled = true;
+  document.getElementById('ble-text').textContent = 'BLE NOT SUPPORTED — USE CHROME';
+}
+
+// Override disableCards to allow clicks but show toast
+function disableModeCards() {
+  [1,2,3,4].forEach(i => {
+    const c = document.getElementById('mc-'+i);
+    c.setAttribute('data-disabled','true');
+  });
+}
+
+// Patch requestPin to check connection
+const _requestPin = requestPin;
+window.requestPin = function(m) {
+  const c = document.getElementById('mc-'+m);
+  if (!connected) { showToast('CONNECT BLE FIRST'); return; }
+  _requestPin(m);
+};
 </script>
 </body>
 </html>
