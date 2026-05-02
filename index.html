@@ -1065,7 +1065,7 @@ async function activateMode(m) {
 async function lockMode(silent = false) {
   if (currentMode === 0) return;
   stopMic();
-  if (apRunning) { apRunning = false; sendBLE('S'); }
+  if (apRunning) { apRunning = false; sendBLE('STOP_AP'); }
   if (!silent) await sendBLE('LOCK');
   stopInactivityTimer();
 
@@ -1320,11 +1320,12 @@ function toggleAP() {
   if (apRunning) {
     btn.textContent = '■ STOP AUTOPILOT'; btn.classList.add('running');
     setAP('🚀','RUNNING','Autonomous navigation active');
+    sendBLE('AP_START'); // tells ESP32 state machine to enter AP_FORWARD
     resetInactivity();
   } else {
     btn.textContent = '▶ START AUTOPILOT'; btn.classList.remove('running');
     setAP('⏸️','STANDBY','Press START to begin');
-    sendBLE('S');
+    sendBLE('STOP_AP'); // tells ESP32 state machine to go AP_IDLE immediately
   }
 }
 
